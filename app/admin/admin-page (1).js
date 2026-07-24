@@ -1,10 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
+
+const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
 
 export default function AdminPage() {
   const supabase = createClient();
+  const router = useRouter();
+
+  const [checking, setChecking] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -14,6 +22,28 @@ export default function AdminPage() {
   const [homeTeam, setHomeTeam] = useState("");
   const [awayTeam, setAwayTeam] = useState("");
   const [kickoff, setKickoff] = useState("");
+
+  useEffect(() => {
+    async function checkAccess() {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+
+      if (!ADMIN_EMAILS.includes(session.user.email)) {
+        setAuthorized(false);
+        setChecking(false);
+        return;
+      }
+
+      setAuthorized(true);
+      setChecking(false);
+    }
+    checkAccess();
+  }, []);
 
   async function loadGames() {
     setLoading(true);
@@ -32,8 +62,10 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    loadGames();
-  }, []);
+    if (authorized) {
+      loadGames();
+    }
+  }, [authorized]);
 
   async function handleAddGame(e) {
     e.preventDefault();
@@ -64,6 +96,25 @@ export default function AdminPage() {
     if (!confirm("Delete this game?")) return;
     await supabase.from("games").delete().eq("id", id);
     loadGames();
+  }
+
+  if (checking) {
+    return (
+      <div className="container">
+        <p style={{ textAlign: "center" }}>Loading...</p>
+      </div>
+    );
+  }
+
+  if (!authorized) {
+    return (
+      <div className="container">
+        <h1>TD Pool Admin</h1>
+        <div className="card">
+          <p>You don&apos;t have access to this page.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
