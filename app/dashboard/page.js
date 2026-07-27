@@ -41,11 +41,14 @@ export default function DashboardPage() {
       <h1>TD Pool</h1>
       <p className="subtitle">Welcome, {email}</p>
       <div className="card">
-        <p>
-          You&apos;re logged in! This is where your weekly picks and the
-          season standings will live next.
-        </p>
-        <button onClick={handleLogout}>Log Out</button>
+        <p>You&apos;re logged in! Ready to make your picks?</p>
+        <button onClick={() => router.push("/picks")}>Make Picks</button>
+        <button
+          onClick={handleLogout}
+          style={{ background: "#234431", marginTop: 10 }}
+        >
+          Log Out
+        </button>
       </div>
     </div>
   );
