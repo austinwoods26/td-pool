@@ -23,6 +23,12 @@ export default function AdminPage() {
   const [awayTeam, setAwayTeam] = useState("");
   const [kickoff, setKickoff] = useState("");
 
+  const [syncWeek, setSyncWeek] = useState("1");
+  const [syncYear, setSyncYear] = useState(String(new Date().getFullYear()));
+  const [syncSeasonType, setSyncSeasonType] = useState("2");
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+
   useEffect(() => {
     async function checkAccess() {
       const { data } = await supabase.auth.getSession();
@@ -92,6 +98,53 @@ export default function AdminPage() {
     loadGames();
   }
 
+  async function handleSync() {
+    setSyncing(true);
+    setSyncMessage("");
+    setError("");
+
+    try {
+      const res = await fetch(
+        `/api/espn-week?week=${syncWeek}&year=${syncYear}&seasontype=${syncSeasonType}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Sync failed");
+        setSyncing(false);
+        return;
+      }
+
+      if (!data.games || data.games.length === 0) {
+        setSyncMessage("No games found for that week.");
+        setSyncing(false);
+        return;
+      }
+
+      const rows = data.games.map((g) => ({
+        ...g,
+        week: parseInt(week, 10),
+      }));
+
+      const { error: upsertError } = await supabase
+        .from("games")
+        .upsert(rows, { onConflict: "espn_game_id" });
+
+      if (upsertError) {
+        setError(upsertError.message);
+        setSyncing(false);
+        return;
+      }
+
+      setSyncMessage(`Synced ${rows.length} games.`);
+      loadGames();
+    } catch (err) {
+      setError(err.message);
+    }
+
+    setSyncing(false);
+  }
+
   async function handleDelete(id) {
     if (!confirm("Delete this game?")) return;
     await supabase.from("games").delete().eq("id", id);
@@ -121,6 +174,83 @@ export default function AdminPage() {
     <div className="container" style={{ maxWidth: 640 }}>
       <h1>TD Pool Admin</h1>
       <p className="subtitle">Manage weekly games</p>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Sync from ESPN</h3>
+        <p style={{ color: "#9fb8a8", fontSize: 14, marginTop: 0 }}>
+          Pulls matchups, kickoff times, logos, and odds straight from ESPN.
+          Uses the &quot;Pool Week&quot; below to file them into your league.
+        </p>
+
+        <label htmlFor="poolWeek">Pool Week</label>
+        <input
+          id="poolWeek"
+          type="number"
+          min="1"
+          max="22"
+          value={week}
+          onChange={(e) => setWeek(e.target.value)}
+        />
+
+        <label htmlFor="syncSeasonType">Season Type</label>
+        <select
+          id="syncSeasonType"
+          value={syncSeasonType}
+          onChange={(e) => setSyncSeasonType(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: "1px solid #2e5540",
+            background: "#0f2417",
+            color: "#fff",
+            fontSize: 15,
+            marginTop: 6,
+          }}
+        >
+          <option value="1">Preseason</option>
+          <option value="2">Regular Season</option>
+          <option value="3">Postseason</option>
+        </select>
+
+        <label htmlFor="syncWeek">ESPN Week Number</label>
+        <input
+          id="syncWeek"
+          type="number"
+          min="1"
+          max="22"
+          value={syncWeek}
+          onChange={(e) => setSyncWeek(e.target.value)}
+        />
+
+        <label htmlFor="syncYear">Year</label>
+        <input
+          id="syncYear"
+          type="number"
+          value={syncYear}
+          onChange={(e) => setSyncYear(e.target.value)}
+        />
+
+        {syncMessage && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: "10px 12px",
+              borderRadius: 8,
+              background: "#14301f",
+              border: "1px solid #22c55e",
+              color: "#4ade80",
+              fontSize: 14,
+            }}
+          >
+            {syncMessage}
+          </div>
+        )}
+
+        <button onClick={handleSync} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync Games from ESPN"}
+        </button>
+      </div>
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Add a Game</h3>
@@ -182,11 +312,20 @@ export default function AdminPage() {
         games.map((g) => (
           <div key={g.id} className="card" style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <strong>Week {g.week}</strong>: {g.away_team} @ {g.home_team}
-                <div style={{ fontSize: 13, color: "#9fb8a8", marginTop: 4 }}>
-                  {new Date(g.kickoff_time).toLocaleString()}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {g.away_team_logo && (
+                  <img src={g.away_team_logo} alt="" style={{ width: 24, height: 24 }} />
+                )}
+                <div>
+                  <strong>Week {g.week}</strong>: {g.away_team} @ {g.home_team}
+                  <div style={{ fontSize: 13, color: "#9fb8a8", marginTop: 4 }}>
+                    {new Date(g.kickoff_time).toLocaleString()}
+                    {g.odds_summary && <span> · {g.odds_summary}</span>}
+                  </div>
                 </div>
+                {g.home_team_logo && (
+                  <img src={g.home_team_logo} alt="" style={{ width: 24, height: 24 }} />
+                )}
               </div>
               <button
                 onClick={() => handleDelete(g.id)}
