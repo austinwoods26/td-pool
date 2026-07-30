@@ -15,7 +15,7 @@ export async function GET(request) {
     );
   }
 
-  const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week=${week}&year=${year}&seasontype=${seasontype}`;
+  const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${year}&seasontype=${seasontype}&week=${week}`;
 
   try {
     const res = await fetch(url, { cache: "no-store" });
