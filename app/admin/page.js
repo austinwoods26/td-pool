@@ -98,6 +98,32 @@ export default function AdminPage() {
     loadGames();
   }
 
+  async function handleSaveSyncConfig() {
+    setSyncMessage("");
+    setError("");
+
+    const { error: configError } = await supabase.from("sync_config").upsert(
+      {
+        id: 1,
+        pool_week: parseInt(week, 10),
+        espn_week: parseInt(syncWeek, 10),
+        seasontype: parseInt(syncSeasonType, 10),
+        year: parseInt(syncYear, 10),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+
+    if (configError) {
+      setError(configError.message);
+      return;
+    }
+
+    setSyncMessage(
+      "Auto-sync default saved. It'll run automatically every Tuesday at 4am Central, starting from these settings."
+    );
+  }
+
   async function handleSync() {
     setSyncing(true);
     setSyncMessage("");
@@ -249,6 +275,12 @@ export default function AdminPage() {
 
         <button onClick={handleSync} disabled={syncing}>
           {syncing ? "Syncing..." : "Sync Games from ESPN"}
+        </button>
+        <button
+          onClick={handleSaveSyncConfig}
+          style={{ background: "#234431", marginTop: 10 }}
+        >
+          Save as Auto-Sync Default
         </button>
       </div>
 
