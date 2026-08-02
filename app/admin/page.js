@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
+import { getPreviousWeek } from "../../lib/espn";
 
 const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
 
@@ -141,18 +142,21 @@ export default function AdminPage() {
       return;
     }
 
-    const lastEspnWeek = config.espn_week - 1;
-    const lastPoolWeek = config.pool_week - 1;
+    const prev = getPreviousWeek(config.seasontype, config.espn_week);
 
-    if (lastEspnWeek < 1) {
+    if (!prev) {
       setSyncMessage("No previous week to refresh yet.");
       setSyncing(false);
       return;
     }
 
+    const lastEspnWeek = prev.week;
+    const lastSeasonType = prev.seasontype;
+    const lastPoolWeek = config.pool_week - 1;
+
     try {
       const res = await fetch(
-        `/api/espn-week?week=${lastEspnWeek}&year=${config.year}&seasontype=${config.seasontype}`
+        `/api/espn-week?week=${lastEspnWeek}&year=${config.year}&seasontype=${lastSeasonType}`
       );
       const data = await res.json();
 
@@ -270,6 +274,12 @@ export default function AdminPage() {
         <p style={{ color: "#9fb8a8", fontSize: 14, marginTop: 0 }}>
           Pulls matchups, kickoff times, logos, and odds straight from ESPN.
           Uses the &quot;Pool Week&quot; below to file them into your league.
+        </p>
+        <p style={{ color: "#9fb8a8", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
+          Heads up: ESPN counts the Hall of Fame Game as Preseason Week 1 —
+          so the &quot;real&quot; Preseason Weeks 1-3 are actually ESPN Weeks
+          2-4. If you'd rather skip the HOF game entirely, just start your
+          Pool Week 1 at ESPN Week 2.
         </p>
 
         <label htmlFor="poolWeek">Pool Week</label>

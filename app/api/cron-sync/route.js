@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchEspnWeek } from "../../../lib/espn";
+import { fetchEspnWeek, getNextWeek, getPreviousWeek } from "../../../lib/espn";
 import { createServerClient } from "../../../lib/supabase-server";
 
 export async function GET(request) {
@@ -47,14 +47,15 @@ export async function GET(request) {
       }
     }
 
-    // 2. Refresh final scores for LAST week too, since games finished since the last run
+    // 2. Refresh final scores for LAST week too, since games finished since the last run.
+    // getPreviousWeek automatically rolls back across season type boundaries
+    // (e.g. Regular Season Week 1 -> Preseason Week 3) so this stays correct
+    // right through preseason -> regular season -> postseason.
     let refreshedCount = 0;
-    if (config.espn_week > 1) {
-      const lastWeekGames = await fetchEspnWeek(
-        config.espn_week - 1,
-        config.year,
-        config.seasontype
-      );
+    const prev = getPreviousWeek(config.seasontype, config.espn_week);
+
+    if (prev) {
+      const lastWeekGames = await fetchEspnWeek(prev.week, config.year, prev.seasontype);
 
       const lastWeekRows = lastWeekGames.map((g) => ({
         ...g,
@@ -73,12 +74,16 @@ export async function GET(request) {
       }
     }
 
-    // Advance to next week for the following run
+    // 3. Advance to next week for the following run — automatically rolls
+    // preseason -> regular season -> postseason at the right boundaries
+    const next = getNextWeek(config.seasontype, config.espn_week);
+
     await supabase
       .from("sync_config")
       .update({
         pool_week: config.pool_week + 1,
-        espn_week: config.espn_week + 1,
+        espn_week: next.week,
+        seasontype: next.seasontype,
         updated_at: new Date().toISOString(),
       })
       .eq("id", 1);
@@ -88,6 +93,8 @@ export async function GET(request) {
       synced_new: upcomingRows.length,
       refreshed_last_week: refreshedCount,
       pool_week: config.pool_week,
+      next_seasontype: next.seasontype,
+      next_espn_week: next.week,
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

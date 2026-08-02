@@ -245,6 +245,7 @@ export default function PicksPage() {
                   }}
                 >
                   {new Date(g.kickoff_time).toLocaleString()}
+                  {g.odds_summary && <span> · {g.odds_summary}</span>}
                   {locked && (
                     <span style={{ color: "#fca5a5", marginLeft: 8 }}>
                       🔒 Locked
@@ -253,7 +254,10 @@ export default function PicksPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 10 }}>
-                  {[g.away_team, g.home_team].map((team) => (
+                  {[
+                    { team: g.away_team, logo: g.away_team_logo },
+                    { team: g.home_team, logo: g.home_team_logo },
+                  ].map(({ team, logo }) => (
                     <button
                       key={team}
                       type="button"
@@ -266,8 +270,19 @@ export default function PicksPage() {
                           picks[g.id] === team ? "#22c55e" : "#0f2417",
                         color: picks[g.id] === team ? "#05170c" : "#fff",
                         border: "1px solid #2e5540",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
                       }}
                     >
+                      {logo && (
+                        <img
+                          src={logo}
+                          alt=""
+                          style={{ width: 22, height: 22 }}
+                        />
+                      )}
                       {team}
                     </button>
                   ))}
