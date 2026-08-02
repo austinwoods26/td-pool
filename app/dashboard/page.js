@@ -4,24 +4,114 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
 
+const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
+
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState("");
+  const [currentWeek, setCurrentWeek] = useState(null);
+  const [pickedCount, setPickedCount] = useState(0);
+  const [totalGames, setTotalGames] = useState(0);
+  const [rank, setRank] = useState(null);
 
   useEffect(() => {
-    async function checkSession() {
+    async function init() {
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         router.push("/login");
         return;
       }
-      setEmail(data.session.user.email);
+      const userEmail = data.session.user.email;
+      setEmail(userEmail);
+      await loadSnapshot(userEmail);
       setChecking(false);
     }
-    checkSession();
+    init();
   }, []);
+
+  async function loadSnapshot(userEmail) {
+    // Figure out "current" week from the saved sync config, if it exists
+    const { data: config } = await supabase
+      .from("sync_config")
+      .select("pool_week")
+      .eq("id", 1)
+      .single();
+
+    // The config tracks the NEXT week to sync, so the current/just-synced
+    // week is one behind that
+    const week = config ? Math.max(config.pool_week - 1, 1) : null;
+    setCurrentWeek(week);
+
+    if (!week) return;
+
+    const { data: player } = await supabase
+      .from("players")
+      .select("id")
+      .eq("email", userEmail)
+      .single();
+
+    if (!player) return;
+
+    const { data: weekGames } = await supabase
+      .from("games")
+      .select("id")
+      .eq("week", week);
+
+    setTotalGames(weekGames?.length || 0);
+
+    if (weekGames && weekGames.length > 0) {
+      const { data: existingPicks } = await supabase
+        .from("picks")
+        .select("id")
+        .eq("player_id", player.id)
+        .in("game_id", weekGames.map((g) => g.id));
+
+      setPickedCount(existingPicks?.length || 0);
+    }
+
+    // Quick rank check from season-long correct picks
+    const { data: finalGames } = await supabase
+      .from("games")
+      .select("id, home_team, away_team, home_score, away_score")
+      .eq("is_final", true);
+
+    if (finalGames && finalGames.length > 0) {
+      const { data: allPlayers } = await supabase.from("players").select("id");
+      const { data: allPicks } = await supabase
+        .from("picks")
+        .select("player_id, game_id, picked_team")
+        .in("game_id", finalGames.map((g) => g.id));
+
+      const winners = {};
+      finalGames.forEach((g) => {
+        winners[g.id] =
+          g.home_score === g.away_score
+            ? null
+            : g.home_score > g.away_score
+            ? g.home_team
+            : g.away_team;
+      });
+
+      const totals = (allPlayers || []).map((p) => {
+        const correct = (allPicks || []).filter(
+          (pk) =>
+            pk.player_id === p.id &&
+            winners[pk.game_id] &&
+            pk.picked_team === winners[pk.game_id]
+        ).length;
+        return { id: p.id, correct };
+      });
+
+      totals.sort((a, b) => b.correct - a.correct);
+      const myIndex = totals.findIndex((t) => t.id === player.id);
+      if (myIndex !== -1) setRank(myIndex + 1);
+    }
+  }
+
+  const isAdmin = ADMIN_EMAILS.includes(email);
 
   if (checking) {
     return (
@@ -32,15 +122,65 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="container">
+    <div className="container" style={{ maxWidth: 640 }}>
       <h1>TD Pool</h1>
       <p className="subtitle">Welcome, {email}</p>
-      <div className="card">
-        <p style={{ margin: 0 }}>
-          Use the menu in the top-left corner to make your picks, check
-          standings, or manage the pool.
-        </p>
-      </div>
+
+      {currentWeek && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Week {currentWeek}</h3>
+          {totalGames === 0 ? (
+            <p style={{ margin: 0, color: "#9fb8a8" }}>
+              No games posted for this week yet.
+            </p>
+          ) : pickedCount === totalGames ? (
+            <p style={{ margin: 0, color: "#4ade80" }}>
+              ✓ All {totalGames} picks submitted
+            </p>
+          ) : (
+            <p style={{ margin: 0, color: "#fca5a5" }}>
+              {pickedCount} of {totalGames} picks made — finish up before
+              kickoff!
+            </p>
+          )}
+          <button onClick={() => router.push("/picks")} style={{ marginTop: 16 }}>
+            {pickedCount === totalGames && totalGames > 0
+              ? "Review Picks"
+              : "Make Picks"}
+          </button>
+        </div>
+      )}
+
+      {rank && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Your Standing</h3>
+          <p style={{ margin: 0 }}>
+            You&apos;re currently in <strong>#{rank}</strong> place for the
+            season.
+          </p>
+          <button
+            onClick={() => router.push("/standings")}
+            style={{ background: "#234431", marginTop: 16 }}
+          >
+            View Full Standings
+          </button>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Admin</h3>
+          <p style={{ margin: 0, color: "#9fb8a8" }}>
+            Manage games, sync ESPN data, and refresh scores.
+          </p>
+          <button
+            onClick={() => router.push("/admin")}
+            style={{ background: "#234431", marginTop: 16 }}
+          >
+            Go to Admin
+          </button>
+        </div>
+      )}
     </div>
   );
 }
