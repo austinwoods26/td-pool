@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
 
+const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -49,6 +51,14 @@ export default function DashboardPage() {
         >
           View Standings
         </button>
+        {ADMIN_EMAILS.includes(email) && (
+          <button
+            onClick={() => router.push("/admin")}
+            style={{ background: "#234431", marginTop: 10 }}
+          >
+            Go to Admin
+          </button>
+        )}
         <button
           onClick={handleLogout}
           style={{ background: "#234431", marginTop: 10 }}
