@@ -43,7 +43,7 @@ export default function StandingsPage() {
 
     const { data: finalGames, error: gamesError } = await supabase
       .from("games")
-      .select("id, home_team, away_team, home_score, away_score, is_final")
+      .select("id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time")
       .eq("is_final", true);
 
     if (gamesError) {
@@ -75,6 +75,29 @@ export default function StandingsPage() {
       return;
     }
 
+    const { data: tiebreakers, error: tbError } = await supabase
+      .from("tiebreakers")
+      .select("player_id, week, guessed_total");
+
+    if (tbError) {
+      setError(tbError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Determine the actual combined score for each week's LAST final game
+    // (by kickoff time) — that's the game the tiebreaker guess is based on
+    const weekFinalTotals = {};
+    finalGames.forEach((g) => {
+      const existing = weekFinalTotals[g.week];
+      if (!existing || new Date(g.kickoff_time) > new Date(existing.kickoff_time)) {
+        weekFinalTotals[g.week] = {
+          kickoff_time: g.kickoff_time,
+          actual_total: g.home_score + g.away_score,
+        };
+      }
+    });
+
     // Determine the winning team for each final game (ties/pushes are skipped)
     const winners = {};
     finalGames.forEach((g) => {
@@ -97,15 +120,36 @@ export default function StandingsPage() {
         if (pick.picked_team === winner) correct += 1;
       });
 
+      // Cumulative tiebreaker accuracy: total distance between guessed and
+      // actual combined score, across every week that's been graded
+      const playerTiebreakers = tiebreakers.filter(
+        (t) => t.player_id === player.id && weekFinalTotals[t.week]
+      );
+      const tiebreakerDiff = playerTiebreakers.reduce(
+        (sum, t) => sum + Math.abs(t.guessed_total - weekFinalTotals[t.week].actual_total),
+        0
+      );
+      const hasTiebreakerData = playerTiebreakers.length > 0;
+
       return {
         ...player,
         correct,
         graded,
         pct: graded > 0 ? Math.round((correct / graded) * 100) : 0,
+        tiebreakerDiff,
+        hasTiebreakerData,
       };
     });
 
-    results.sort((a, b) => b.correct - a.correct || b.pct - a.pct);
+    results.sort((a, b) => {
+      if (b.correct !== a.correct) return b.correct - a.correct;
+      // Tied on correct picks — closer cumulative tiebreaker guess wins.
+      // Players with no tiebreaker data fall to the bottom of a tie.
+      if (a.hasTiebreakerData !== b.hasTiebreakerData) {
+        return a.hasTiebreakerData ? -1 : 1;
+      }
+      return a.tiebreakerDiff - b.tiebreakerDiff;
+    });
 
     setStandings(results);
     setLoading(false);
@@ -187,6 +231,9 @@ export default function StandingsPage() {
                 <strong>{player.name}</strong>
                 <div style={{ fontSize: 13, color: "#9fb8a8" }}>
                   {player.correct} correct of {player.graded} graded
+                  {player.hasTiebreakerData && (
+                    <span> · tiebreaker off by {player.tiebreakerDiff}</span>
+                  )}
                 </div>
               </div>
             </div>
