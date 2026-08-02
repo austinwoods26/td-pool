@@ -124,6 +124,70 @@ export default function AdminPage() {
     );
   }
 
+  async function handleRefreshLastWeek() {
+    setSyncing(true);
+    setSyncMessage("");
+    setError("");
+
+    const { data: config, error: configError } = await supabase
+      .from("sync_config")
+      .select("*")
+      .eq("id", 1)
+      .single();
+
+    if (configError || !config) {
+      setError("No auto-sync default saved yet, so there's no 'last week' to refresh.");
+      setSyncing(false);
+      return;
+    }
+
+    const lastEspnWeek = config.espn_week - 1;
+    const lastPoolWeek = config.pool_week - 1;
+
+    if (lastEspnWeek < 1) {
+      setSyncMessage("No previous week to refresh yet.");
+      setSyncing(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/espn-week?week=${lastEspnWeek}&year=${config.year}&seasontype=${config.seasontype}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Refresh failed");
+        setSyncing(false);
+        return;
+      }
+
+      const rows = (data.games || []).map((g) => ({
+        ...g,
+        week: lastPoolWeek,
+      }));
+
+      if (rows.length > 0) {
+        const { error: upsertError } = await supabase
+          .from("games")
+          .upsert(rows, { onConflict: "espn_game_id" });
+
+        if (upsertError) {
+          setError(upsertError.message);
+          setSyncing(false);
+          return;
+        }
+      }
+
+      setSyncMessage(`Refreshed scores for ${rows.length} games from last week.`);
+      loadGames();
+    } catch (err) {
+      setError(err.message);
+    }
+
+    setSyncing(false);
+  }
+
   async function handleSync() {
     setSyncing(true);
     setSyncMessage("");
@@ -281,6 +345,13 @@ export default function AdminPage() {
           style={{ background: "#234431", marginTop: 10 }}
         >
           Save as Auto-Sync Default
+        </button>
+        <button
+          onClick={handleRefreshLastWeek}
+          disabled={syncing}
+          style={{ background: "#234431", marginTop: 10 }}
+        >
+          {syncing ? "Refreshing..." : "Refresh Last Week's Scores Now"}
         </button>
       </div>
 

@@ -25,24 +25,51 @@ export async function GET(request) {
   }
 
   try {
-    const games = await fetchEspnWeek(
+    // 1. Sync the upcoming week (new matchups, kickoff times, odds)
+    const upcomingGames = await fetchEspnWeek(
       config.espn_week,
       config.year,
       config.seasontype
     );
 
-    const rows = games.map((g) => ({
+    const upcomingRows = upcomingGames.map((g) => ({
       ...g,
       week: config.pool_week,
     }));
 
-    if (rows.length > 0) {
+    if (upcomingRows.length > 0) {
       const { error: upsertError } = await supabase
         .from("games")
-        .upsert(rows, { onConflict: "espn_game_id" });
+        .upsert(upcomingRows, { onConflict: "espn_game_id" });
 
       if (upsertError) {
         return NextResponse.json({ error: upsertError.message }, { status: 500 });
+      }
+    }
+
+    // 2. Refresh final scores for LAST week too, since games finished since the last run
+    let refreshedCount = 0;
+    if (config.espn_week > 1) {
+      const lastWeekGames = await fetchEspnWeek(
+        config.espn_week - 1,
+        config.year,
+        config.seasontype
+      );
+
+      const lastWeekRows = lastWeekGames.map((g) => ({
+        ...g,
+        week: config.pool_week - 1,
+      }));
+
+      if (lastWeekRows.length > 0) {
+        const { error: refreshError } = await supabase
+          .from("games")
+          .upsert(lastWeekRows, { onConflict: "espn_game_id" });
+
+        if (refreshError) {
+          return NextResponse.json({ error: refreshError.message }, { status: 500 });
+        }
+        refreshedCount = lastWeekRows.length;
       }
     }
 
@@ -58,7 +85,8 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
-      synced: rows.length,
+      synced_new: upcomingRows.length,
+      refreshed_last_week: refreshedCount,
       pool_week: config.pool_week,
     });
   } catch (err) {

@@ -44,6 +44,12 @@ export default function DashboardPage() {
         <p>You&apos;re logged in! Ready to make your picks?</p>
         <button onClick={() => router.push("/picks")}>Make Picks</button>
         <button
+          onClick={() => router.push("/standings")}
+          style={{ background: "#234431", marginTop: 10 }}
+        >
+          View Standings
+        </button>
+        <button
           onClick={handleLogout}
           style={{ background: "#234431", marginTop: 10 }}
         >
