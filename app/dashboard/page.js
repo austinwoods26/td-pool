@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
+import { ensurePlayerRecord } from "../../lib/players";
 
 const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
 
@@ -26,13 +27,15 @@ export default function DashboardPage() {
       }
       const userEmail = data.session.user.email;
       setEmail(userEmail);
-      await loadSnapshot(userEmail);
+      await loadSnapshot(data.session);
       setChecking(false);
     }
     init();
   }, []);
 
-  async function loadSnapshot(userEmail) {
+  async function loadSnapshot(session) {
+    const userEmail = session.user.email;
+
     // Figure out "current" week from the saved sync config, if it exists
     const { data: config } = await supabase
       .from("sync_config")
@@ -47,11 +50,7 @@ export default function DashboardPage() {
 
     if (!week) return;
 
-    const { data: player } = await supabase
-      .from("players")
-      .select("id")
-      .eq("email", userEmail)
-      .single();
+    const player = await ensurePlayerRecord(supabase, session);
 
     if (!player) return;
 

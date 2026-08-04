@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
+import { ensurePlayerRecord } from "../../lib/players";
 
 export default function PicksPage() {
   const supabase = createClient();
@@ -41,15 +42,11 @@ export default function PicksPage() {
         return;
       }
 
-      const { data: player, error: playerError } = await supabase
-        .from("players")
-        .select("id")
-        .eq("email", session.user.email)
-        .single();
+      const player = await ensurePlayerRecord(supabase, session);
 
-      if (playerError || !player) {
+      if (!player) {
         setError(
-          "We couldn't find your player profile. Try logging out and signing up again."
+          "We couldn't set up your player profile. Try logging out and back in."
         );
         setChecking(false);
         return;

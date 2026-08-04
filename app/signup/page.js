@@ -23,24 +23,15 @@ export default function SignupPage() {
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-    });
-
-    if (signUpError) {
-      setLoading(false);
-      setError(signUpError.message);
-      return;
-    }
-
-    // Create the matching player record so they show up in standings
-    const { error: playerError } = await supabase.from("players").insert({
-      name,
-      email,
+      options: {
+        data: { name },
+      },
     });
 
     setLoading(false);
 
-    if (playerError) {
-      setError(playerError.message);
+    if (signUpError) {
+      setError(signUpError.message);
       return;
     }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchEspnWeek, getNextWeek, getPreviousWeek } from "../../../lib/espn";
-import { createServerClient } from "../../../lib/supabase-server";
+import { createServiceClient } from "../../../lib/supabase-server";
 
 export async function GET(request) {
   // Verify this request is really coming from Vercel's cron scheduler
@@ -9,7 +9,7 @@ export async function GET(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = createServerClient();
+  const supabase = createServiceClient();
 
   const { data: config, error: configError } = await supabase
     .from("sync_config")
