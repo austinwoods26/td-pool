@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "../lib/supabase-browser";
 
 const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
+const HIDE_ON_PATHS = ["/login", "/signup"];
 
 export default function Nav() {
   const router = useRouter();
+  const pathname = usePathname();
   const supabase = createClient();
 
   const [open, setOpen] = useState(false);
@@ -34,7 +36,10 @@ export default function Nav() {
     router.push(path);
   }
 
-  // Not logged in (e.g. on /login or /signup) — show nothing
+  // Never show on the login/signup pages, even if a session still exists
+  if (HIDE_ON_PATHS.includes(pathname)) return null;
+
+  // Not logged in — show nothing
   if (!email) return null;
 
   const isAdmin = ADMIN_EMAILS.includes(email);
