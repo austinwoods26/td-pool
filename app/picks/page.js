@@ -23,6 +23,13 @@ export default function PicksPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // 1. Confirm login + find matching player record
   useEffect(() => {
     async function init() {
@@ -122,7 +129,25 @@ export default function PicksPage() {
 
   function isLocked(kickoffTime) {
     const lockTime = new Date(kickoffTime).getTime() - 15 * 60 * 1000;
-    return Date.now() >= lockTime;
+    return now >= lockTime;
+  }
+
+  function formatCountdown(kickoffTime) {
+    const lockTime = new Date(kickoffTime).getTime() - 15 * 60 * 1000;
+    const remaining = lockTime - now;
+
+    if (remaining <= 0) return null;
+
+    const totalSeconds = Math.floor(remaining / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    if (days > 0) return `Locks in ${days}d ${hours}h`;
+    if (hours > 0) return `Locks in ${hours}h ${minutes}m`;
+    if (minutes > 0) return `Locks in ${minutes}m ${seconds}s`;
+    return `Locks in ${seconds}s`;
   }
 
   function handlePick(gameId, team) {
@@ -246,10 +271,30 @@ export default function PicksPage() {
                 >
                   {new Date(g.kickoff_time).toLocaleString()}
                   {g.odds_summary && <span> · {g.odds_summary}</span>}
-                  {locked && (
+                  {locked ? (
                     <span style={{ color: "#fca5a5", marginLeft: 8 }}>
                       🔒 Locked
                     </span>
+                  ) : (
+                    (() => {
+                      const countdown = formatCountdown(g.kickoff_time);
+                      const remaining =
+                        new Date(g.kickoff_time).getTime() -
+                        15 * 60 * 1000 -
+                        now;
+                      const urgent = remaining < 15 * 60 * 1000; // under 15 min left
+                      return countdown ? (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            color: urgent ? "#fbbf24" : "#4ade80",
+                            fontWeight: urgent ? 700 : 400,
+                          }}
+                        >
+                          ⏱ {countdown}
+                        </span>
+                      ) : null;
+                    })()
                   )}
                 </div>
 
