@@ -1,0 +1,15 @@
+name: Refresh TD Pool Scores
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call refresh endpoint
+        run: |
+          curl -sS -X GET "https://thetdpool.com/api/refresh-scores" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
