@@ -30,6 +30,11 @@ export default function AdminPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
 
+  const [players, setPlayers] = useState([]);
+  const [statusWeek, setStatusWeek] = useState(null);
+  const [playerStatus, setPlayerStatus] = useState([]);
+  const [statusLoading, setStatusLoading] = useState(false);
+
   useEffect(() => {
     async function checkAccess() {
       const { data } = await supabase.auth.getSession();
@@ -71,8 +76,62 @@ export default function AdminPage() {
   useEffect(() => {
     if (authorized) {
       loadGames();
+      loadPlayers();
     }
   }, [authorized]);
+
+  async function loadPlayers() {
+    const { data } = await supabase.from("players").select("id, name").order("name");
+    setPlayers(data || []);
+  }
+
+  useEffect(() => {
+    if (games.length > 0 && statusWeek === null) {
+      const maxWeek = Math.max(...games.map((g) => g.week));
+      setStatusWeek(maxWeek);
+    }
+  }, [games]);
+
+  useEffect(() => {
+    if (statusWeek !== null && players.length > 0) {
+      loadPlayerStatus();
+    }
+  }, [statusWeek, players, games]);
+
+  async function loadPlayerStatus() {
+    setStatusLoading(true);
+
+    const weekGames = games.filter((g) => g.week === statusWeek);
+    const gameIds = weekGames.map((g) => g.id);
+
+    const { data: weekPicks } = await supabase
+      .from("picks")
+      .select("player_id, game_id")
+      .in("game_id", gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"]);
+
+    const { data: weekTiebreakers } = await supabase
+      .from("tiebreakers")
+      .select("player_id")
+      .eq("week", statusWeek);
+
+    const tbSet = new Set((weekTiebreakers || []).map((t) => t.player_id));
+
+    const status = players.map((p) => {
+      const made = (weekPicks || []).filter((pk) => pk.player_id === p.id).length;
+      return {
+        id: p.id,
+        name: p.name,
+        made,
+        total: weekGames.length,
+        tiebreaker: tbSet.has(p.id),
+      };
+    });
+
+    status.sort((a, b) => b.made - a.made || a.name.localeCompare(b.name));
+
+    setPlayerStatus(status);
+    setStatusLoading(false);
+  }
 
   async function handleAddGame(e) {
     e.preventDefault();
@@ -268,6 +327,70 @@ export default function AdminPage() {
     <div className="container" style={{ maxWidth: 640 }}>
       <h1>TD Pool Admin</h1>
       <p className="subtitle">Manage weekly games</p>
+
+      {games.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Player Pick Status</h3>
+
+          <label htmlFor="statusWeek">Week</label>
+          <select
+            id="statusWeek"
+            value={statusWeek ?? ""}
+            onChange={(e) => setStatusWeek(parseInt(e.target.value, 10))}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 8,
+              border: "1px solid #2e5540",
+              background: "#0f2417",
+              color: "#fff",
+              fontSize: 15,
+              marginBottom: 16,
+            }}
+          >
+            {[...new Set(games.map((g) => g.week))]
+              .sort((a, b) => a - b)
+              .map((w) => (
+                <option key={w} value={w}>
+                  Week {w}
+                </option>
+              ))}
+          </select>
+
+          {statusLoading ? (
+            <p style={{ margin: 0, color: "#9fb8a8" }}>Loading...</p>
+          ) : players.length === 0 ? (
+            <p style={{ margin: 0, color: "#9fb8a8" }}>
+              No players have signed up yet.
+            </p>
+          ) : (
+            playerStatus.map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom: "1px solid #234431",
+                }}
+              >
+                <span>{p.name}</span>
+                <span
+                  style={{
+                    color:
+                      p.made === p.total && p.total > 0 ? "#4ade80" : "#9fb8a8",
+                    fontSize: 14,
+                  }}
+                >
+                  {p.made}/{p.total} picks
+                  {p.tiebreaker ? " · TB ✓" : " · TB ✗"}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Sync from ESPN</h3>
