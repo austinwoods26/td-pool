@@ -142,6 +142,9 @@ export default function Nav() {
         <a onClick={() => go("/picks")} style={linkStyle}>
           Make Picks
         </a>
+        <a onClick={() => go("/board")} style={linkStyle}>
+          Picks Board
+        </a>
         <a onClick={() => go("/standings")} style={linkStyle}>
           Standings
         </a>
