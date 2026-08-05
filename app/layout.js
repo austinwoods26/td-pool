@@ -1,5 +1,6 @@
 import "./globals.css";
 import Nav from "../components/Nav";
+import ProfileButton from "../components/ProfileButton";
 
 export const metadata = {
   title: "TD Pool",
@@ -11,6 +12,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <Nav />
+        <ProfileButton />
         {children}
       </body>
     </html>
