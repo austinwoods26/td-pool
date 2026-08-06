@@ -12,8 +12,7 @@ export default function PicksPage() {
   const [checking, setChecking] = useState(true);
   const [playerId, setPlayerId] = useState(null);
 
-  const [weeks, setWeeks] = useState([]);
-  const [selectedWeek, setSelectedWeek] = useState(null);
+  const [currentWeek, setCurrentWeek] = useState(null);
 
   const [games, setGames] = useState([]);
   const [picks, setPicks] = useState({}); // { game_id: "team name" }
@@ -58,32 +57,34 @@ export default function PicksPage() {
     init();
   }, []);
 
-  // 2. Once we know who the player is, load available weeks
+  // 2. Once we know who the player is, figure out the current active week
+  // from the saved sync config (the same week the Tuesday auto-sync just loaded)
   useEffect(() => {
     if (!playerId) return;
 
-    async function loadWeeks() {
-      const { data } = await supabase
-        .from("games")
-        .select("week")
-        .order("week", { ascending: true });
+    async function loadCurrentWeek() {
+      const { data: config } = await supabase
+        .from("sync_config")
+        .select("pool_week")
+        .eq("id", 1)
+        .single();
 
-      if (data && data.length > 0) {
-        const uniqueWeeks = [...new Set(data.map((g) => g.week))];
-        setWeeks(uniqueWeeks);
-        setSelectedWeek(uniqueWeeks[0]);
+      if (config) {
+        // The config tracks the NEXT week to sync, so the current/active
+        // week is one behind that
+        setCurrentWeek(Math.max(config.pool_week - 1, 1));
       } else {
         setLoading(false);
       }
     }
-    loadWeeks();
+    loadCurrentWeek();
   }, [playerId]);
 
-  // 3. Load games + existing picks whenever the selected week changes
+  // 3. Load games + existing picks for the current week
   useEffect(() => {
-    if (!selectedWeek || !playerId) return;
+    if (!currentWeek || !playerId) return;
     loadWeekData();
-  }, [selectedWeek, playerId]);
+  }, [currentWeek, playerId]);
 
   async function loadWeekData() {
     setLoading(true);
@@ -93,7 +94,7 @@ export default function PicksPage() {
     const { data: weekGames } = await supabase
       .from("games")
       .select("*")
-      .eq("week", selectedWeek)
+      .eq("week", currentWeek)
       .order("kickoff_time", { ascending: true });
 
     setGames(weekGames || []);
@@ -114,7 +115,7 @@ export default function PicksPage() {
       .from("tiebreakers")
       .select("guessed_total")
       .eq("player_id", playerId)
-      .eq("week", selectedWeek)
+      .eq("week", currentWeek)
       .single();
 
     setTiebreaker(
@@ -185,7 +186,7 @@ export default function PicksPage() {
       const { error: tbError } = await supabase.from("tiebreakers").upsert(
         {
           player_id: playerId,
-          week: selectedWeek,
+          week: currentWeek,
           guessed_total: parseInt(tiebreaker, 10),
         },
         { onConflict: "player_id,week" }
@@ -213,35 +214,11 @@ export default function PicksPage() {
   return (
     <div className="container" style={{ maxWidth: 640 }}>
       <h1>TD Pool</h1>
-      <p className="subtitle">Make your picks</p>
+      <p className="subtitle">
+        Make your picks{currentWeek ? ` — Week ${currentWeek}` : ""}
+      </p>
 
       {error && <div className="error">{error}</div>}
-
-      {weeks.length > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <label htmlFor="week">Week</label>
-          <select
-            id="week"
-            value={selectedWeek || ""}
-            onChange={(e) => setSelectedWeek(parseInt(e.target.value, 10))}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #2e5540",
-              background: "#0f2417",
-              color: "#fff",
-              fontSize: 15,
-            }}
-          >
-            {weeks.map((w) => (
-              <option key={w} value={w}>
-                Week {w}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {loading ? (
         <p>Loading games...</p>
