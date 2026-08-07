@@ -34,24 +34,18 @@ export default function DashboardPage() {
   }, []);
 
   async function loadSnapshot(session) {
-    const userEmail = session.user.email;
-
-    // Figure out "current" week from the saved sync config, if it exists
     const { data: config } = await supabase
       .from("sync_config")
       .select("pool_week")
       .eq("id", 1)
       .single();
 
-    // The config tracks the NEXT week to sync, so the current/just-synced
-    // week is one behind that
     const week = config ? Math.max(config.pool_week - 1, 1) : null;
     setCurrentWeek(week);
 
     if (!week) return;
 
     const player = await ensurePlayerRecord(supabase, session);
-
     if (!player) return;
 
     const { data: weekGames } = await supabase
@@ -71,7 +65,6 @@ export default function DashboardPage() {
       setPickedCount(existingPicks?.length || 0);
     }
 
-    // Quick rank check from season-long correct picks
     const { data: finalGames } = await supabase
       .from("games")
       .select("id, home_team, away_team, home_score, away_score")
@@ -121,65 +114,102 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 640 }}>
-      <h1>TD Pool</h1>
-      <p className="subtitle">Welcome, {email}</p>
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        backgroundColor: "#0b1f14",
+        backgroundImage: "url('/dashboard-bg.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center top",
+        backgroundRepeat: "no-repeat",
+        backgroundAttachment: "fixed",
+      }}
+    >
+      <div className="container" style={{ maxWidth: 640 }}>
+        <div
+          style={{
+            background: "rgba(5, 15, 10, 0.5)",
+            backdropFilter: "blur(6px)",
+            borderRadius: 12,
+            padding: "14px 20px",
+            marginBottom: 20,
+          }}
+        >
+          <h1 style={{ margin: 0 }}>TD Pool</h1>
+          <p className="subtitle" style={{ margin: "4px 0 0 0" }}>
+            Welcome, {email}
+          </p>
+        </div>
 
-      {currentWeek && (
-        <div className="card" style={{ marginBottom: 12 }}>
-          <h3 style={{ marginTop: 0 }}>Week {currentWeek}</h3>
-          {totalGames === 0 ? (
+        {currentWeek && (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Week {currentWeek}</h3>
+            {totalGames === 0 ? (
+              <p style={{ margin: 0, color: "#9fb8a8" }}>
+                No games posted for this week yet.
+              </p>
+            ) : pickedCount === totalGames ? (
+              <p style={{ margin: 0, color: "#4ade80" }}>
+                ✓ All {totalGames} picks submitted
+              </p>
+            ) : (
+              <p style={{ margin: 0, color: "#fca5a5" }}>
+                {pickedCount} of {totalGames} picks made — finish up before
+                kickoff!
+              </p>
+            )}
+            <button onClick={() => router.push("/picks")} style={{ marginTop: 16 }}>
+              {pickedCount === totalGames && totalGames > 0
+                ? "Review Picks"
+                : "Make Picks"}
+            </button>
+          </div>
+        )}
+
+        {rank && (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Your Standing</h3>
+            <p style={{ margin: 0 }}>
+              You&apos;re currently in <strong>#{rank}</strong> place for the
+              season.
+            </p>
+            <button
+              onClick={() => router.push("/standings")}
+              style={{ background: "#234431", marginTop: 16 }}
+            >
+              View Full Standings
+            </button>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <h3 style={{ marginTop: 0 }}>Admin</h3>
             <p style={{ margin: 0, color: "#9fb8a8" }}>
-              No games posted for this week yet.
+              Manage games, sync ESPN data, and refresh scores.
             </p>
-          ) : pickedCount === totalGames ? (
-            <p style={{ margin: 0, color: "#4ade80" }}>
-              ✓ All {totalGames} picks submitted
-            </p>
-          ) : (
-            <p style={{ margin: 0, color: "#fca5a5" }}>
-              {pickedCount} of {totalGames} picks made — finish up before
-              kickoff!
-            </p>
-          )}
-          <button onClick={() => router.push("/picks")} style={{ marginTop: 16 }}>
-            {pickedCount === totalGames && totalGames > 0
-              ? "Review Picks"
-              : "Make Picks"}
-          </button>
-        </div>
-      )}
+            <button
+              onClick={() => router.push("/admin")}
+              style={{ background: "#234431", marginTop: 16 }}
+            >
+              Go to Admin
+            </button>
+          </div>
+        )}
 
-      {rank && (
-        <div className="card" style={{ marginBottom: 12 }}>
-          <h3 style={{ marginTop: 0 }}>Your Standing</h3>
-          <p style={{ margin: 0 }}>
-            You&apos;re currently in <strong>#{rank}</strong> place for the
-            season.
-          </p>
-          <button
-            onClick={() => router.push("/standings")}
-            style={{ background: "#234431", marginTop: 16 }}
-          >
-            View Full Standings
-          </button>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Admin</h3>
-          <p style={{ margin: 0, color: "#9fb8a8" }}>
-            Manage games, sync ESPN data, and refresh scores.
-          </p>
-          <button
-            onClick={() => router.push("/admin")}
-            style={{ background: "#234431", marginTop: 16 }}
-          >
-            Go to Admin
-          </button>
-        </div>
-      )}
+        <p
+          style={{
+            fontSize: 11,
+            color: "rgba(159,184,168,0.7)",
+            textAlign: "center",
+            marginTop: 24,
+          }}
+        >
+          Background photo by Louis Briscese / Official Travis AFB, Calif.
+          (CC BY-NC 2.0)
+        </p>
+      </div>
     </div>
   );
 }
