@@ -49,13 +49,21 @@ export default function LoginPage() {
       }}
     >
       <div className="container" style={{ paddingTop: 0, paddingBottom: 48 }}>
-        <h1 style={{ textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}>TD Pool</h1>
-        <p
-          className="subtitle"
-          style={{ textShadow: "0 1px 8px rgba(0,0,0,0.6)" }}
+        <div
+          style={{
+            background: "rgba(5, 15, 10, 0.55)",
+            backdropFilter: "blur(6px)",
+            borderRadius: 12,
+            padding: "16px 20px",
+            marginBottom: 20,
+            textAlign: "center",
+          }}
         >
-          Sign in to make your picks
-        </p>
+          <h1 style={{ margin: 0 }}>TD Pool</h1>
+          <p className="subtitle" style={{ margin: "4px 0 0 0" }}>
+            Sign in to make your picks
+          </p>
+        </div>
 
         <div className="card">
           <form onSubmit={handleLogin}>
