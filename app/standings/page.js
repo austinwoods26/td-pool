@@ -11,8 +11,8 @@ export default function StandingsPage() {
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [standings, setStandings] = useState([]);
-  const [gradedCount, setGradedCount] = useState(0);
+  const [weeks, setWeeks] = useState([]);
+  const [rows, setRows] = useState([]);
 
   useEffect(() => {
     async function init() {
@@ -41,10 +41,9 @@ export default function StandingsPage() {
       return;
     }
 
-    const { data: finalGames, error: gamesError } = await supabase
+    const { data: allGames, error: gamesError } = await supabase
       .from("games")
-      .select("id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time")
-      .eq("is_final", true);
+      .select("id, week, home_team, away_team, home_score, away_score, is_final");
 
     if (gamesError) {
       setError(gamesError.message);
@@ -52,22 +51,17 @@ export default function StandingsPage() {
       return;
     }
 
-    setGradedCount(finalGames.length);
+    const distinctWeeks = [...new Set(allGames.map((g) => g.week))].sort((a, b) => a - b);
+    setWeeks(distinctWeeks);
 
-    if (finalGames.length === 0) {
-      setStandings(
-        players.map((p) => ({ ...p, correct: 0, graded: 0, pct: 0 }))
-      );
-      setLoading(false);
-      return;
-    }
-
+    const finalGames = allGames.filter((g) => g.is_final);
     const gameIds = finalGames.map((g) => g.id);
+    const safeIds = gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"];
 
     const { data: picks, error: picksError } = await supabase
       .from("picks")
       .select("player_id, game_id, picked_team")
-      .in("game_id", gameIds);
+      .in("game_id", safeIds);
 
     if (picksError) {
       setError(picksError.message);
@@ -75,83 +69,39 @@ export default function StandingsPage() {
       return;
     }
 
-    const { data: tiebreakers, error: tbError } = await supabase
-      .from("tiebreakers")
-      .select("player_id, week, guessed_total");
-
-    if (tbError) {
-      setError(tbError.message);
-      setLoading(false);
-      return;
-    }
-
-    // Determine the actual combined score for each week's LAST final game
-    // (by kickoff time) — that's the game the tiebreaker guess is based on
-    const weekFinalTotals = {};
-    finalGames.forEach((g) => {
-      const existing = weekFinalTotals[g.week];
-      if (!existing || new Date(g.kickoff_time) > new Date(existing.kickoff_time)) {
-        weekFinalTotals[g.week] = {
-          kickoff_time: g.kickoff_time,
-          actual_total: g.home_score + g.away_score,
-        };
-      }
-    });
-
-    // Determine the winning team for each final game (ties/pushes are skipped)
     const winners = {};
     finalGames.forEach((g) => {
-      if (g.home_score === g.away_score) {
-        winners[g.id] = null; // tie, no correct pick possible
-      } else {
-        winners[g.id] = g.home_score > g.away_score ? g.home_team : g.away_team;
-      }
+      winners[g.id] =
+        g.home_score === g.away_score
+          ? null
+          : g.home_score > g.away_score
+          ? g.home_team
+          : g.away_team;
     });
 
     const results = players.map((player) => {
-      const playerPicks = picks.filter((p) => p.player_id === player.id);
-      let correct = 0;
-      let graded = 0;
+      const weekWins = {};
+      let total = 0;
 
-      playerPicks.forEach((pick) => {
-        const winner = winners[pick.game_id];
-        if (winner === null) return; // tie, doesn't count
-        graded += 1;
-        if (pick.picked_team === winner) correct += 1;
+      distinctWeeks.forEach((w) => {
+        const weekGameIds = finalGames.filter((g) => g.week === w).map((g) => g.id);
+        const wins = picks.filter(
+          (pk) =>
+            pk.player_id === player.id &&
+            weekGameIds.includes(pk.game_id) &&
+            winners[pk.game_id] &&
+            pk.picked_team === winners[pk.game_id]
+        ).length;
+        weekWins[w] = wins;
+        total += wins;
       });
 
-      // Cumulative tiebreaker accuracy: total distance between guessed and
-      // actual combined score, across every week that's been graded
-      const playerTiebreakers = tiebreakers.filter(
-        (t) => t.player_id === player.id && weekFinalTotals[t.week]
-      );
-      const tiebreakerDiff = playerTiebreakers.reduce(
-        (sum, t) => sum + Math.abs(t.guessed_total - weekFinalTotals[t.week].actual_total),
-        0
-      );
-      const hasTiebreakerData = playerTiebreakers.length > 0;
-
-      return {
-        ...player,
-        correct,
-        graded,
-        pct: graded > 0 ? Math.round((correct / graded) * 100) : 0,
-        tiebreakerDiff,
-        hasTiebreakerData,
-      };
+      return { id: player.id, name: player.name, weekWins, total };
     });
 
-    results.sort((a, b) => {
-      if (b.correct !== a.correct) return b.correct - a.correct;
-      // Tied on correct picks — closer cumulative tiebreaker guess wins.
-      // Players with no tiebreaker data fall to the bottom of a tie.
-      if (a.hasTiebreakerData !== b.hasTiebreakerData) {
-        return a.hasTiebreakerData ? -1 : 1;
-      }
-      return a.tiebreakerDiff - b.tiebreakerDiff;
-    });
+    results.sort((a, b) => b.total - a.total);
 
-    setStandings(results);
+    setRows(results);
     setLoading(false);
   }
 
@@ -164,82 +114,123 @@ export default function StandingsPage() {
   }
 
   const medalColor = (rank) => {
-    if (rank === 0) return "#ffd700"; // gold
-    if (rank === 1) return "#c0c0c0"; // silver
-    if (rank === 2) return "#cd7f32"; // bronze
-    return "#9fb8a8";
+    if (rank === 0) return "#ffd700";
+    if (rank === 1) return "#c0c0c0";
+    if (rank === 2) return "#cd7f32";
+    return "transparent";
   };
 
   return (
-    <div className="container" style={{ maxWidth: 640 }}>
+    <div className="container" style={{ maxWidth: 900 }}>
       <h1>TD Pool</h1>
-      <p className="subtitle">
-        Season Standings
-        {gradedCount > 0 && ` · ${gradedCount} games graded`}
-      </p>
+      <p className="subtitle">Season Results</p>
 
       {error && <div className="error">{error}</div>}
 
       {loading ? (
-        <p>Loading standings...</p>
-      ) : standings.length === 0 ? (
+        <p>Loading...</p>
+      ) : rows.length === 0 ? (
         <div className="card">
           <p style={{ margin: 0, color: "#9fb8a8" }}>No players yet.</p>
         </div>
-      ) : gradedCount === 0 ? (
+      ) : weeks.length === 0 ? (
         <div className="card">
           <p style={{ margin: 0, color: "#9fb8a8" }}>
-            No games have been graded yet. Standings will appear here once
-            games are marked final.
+            No games have been added yet.
           </p>
         </div>
       ) : (
-        standings.map((player, idx) => (
-          <div
-            key={player.id}
-            className="card"
-            style={{
-              marginBottom: 10,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              border:
-                idx < 3
-                  ? `1px solid ${medalColor(idx)}`
-                  : "1px solid #234431",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: medalColor(idx),
-                  color: "#05170c",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  flexShrink: 0,
-                }}
-              >
-                {idx + 1}
-              </div>
-              <div>
-                <strong>{player.name}</strong>
-                <div style={{ fontSize: 13, color: "#9fb8a8" }}>
-                  {player.correct} correct of {player.graded} graded
-                  {player.hasTiebreakerData && (
-                    <span> · tiebreaker off by {player.tiebreakerDiff}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{player.pct}%</div>
-          </div>
-        ))
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    background: "#0b1f14",
+                    padding: "8px 12px",
+                    textAlign: "left",
+                    borderBottom: "2px solid #234431",
+                    minWidth: 140,
+                  }}
+                >
+                  Player
+                </th>
+                {weeks.map((w) => (
+                  <th
+                    key={w}
+                    style={{
+                      padding: "8px 6px",
+                      borderBottom: "2px solid #234431",
+                      borderLeft: "1px solid #234431",
+                      minWidth: 50,
+                      textAlign: "center",
+                    }}
+                  >
+                    Wk {w}
+                  </th>
+                ))}
+                <th
+                  style={{
+                    padding: "8px 6px",
+                    borderBottom: "2px solid #234431",
+                    borderLeft: "1px solid #234431",
+                    minWidth: 60,
+                    textAlign: "center",
+                  }}
+                >
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={row.id}>
+                  <td
+                    style={{
+                      position: "sticky",
+                      left: 0,
+                      background: "#0b1f14",
+                      padding: "8px 12px",
+                      borderBottom: "1px solid #234431",
+                      borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {row.name}
+                  </td>
+                  {weeks.map((w) => (
+                    <td
+                      key={w}
+                      style={{
+                        padding: "8px 6px",
+                        textAlign: "center",
+                        borderBottom: "1px solid #234431",
+                        borderLeft: "1px solid #234431",
+                        color: "#9fb8a8",
+                      }}
+                    >
+                      {row.weekWins[w]}
+                    </td>
+                  ))}
+                  <td
+                    style={{
+                      padding: "8px 6px",
+                      textAlign: "center",
+                      borderBottom: "1px solid #234431",
+                      borderLeft: "1px solid #234431",
+                      fontWeight: 700,
+                      color: idx < 3 ? medalColor(idx) : "#fff",
+                    }}
+                  >
+                    {row.total}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

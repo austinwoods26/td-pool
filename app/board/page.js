@@ -15,6 +15,7 @@ export default function BoardPage() {
   const [games, setGames] = useState([]);
   const [players, setPlayers] = useState([]);
   const [picks, setPicks] = useState([]);
+  const [tiebreakers, setTiebreakers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
 
@@ -52,9 +53,7 @@ export default function BoardPage() {
   }
 
   useEffect(() => {
-    if (selectedWeek !== null) {
-      loadBoard();
-    }
+    if (selectedWeek !== null) loadBoard();
   }, [selectedWeek]);
 
   async function loadBoard() {
@@ -72,15 +71,22 @@ export default function BoardPage() {
       .order("name", { ascending: true });
 
     const gameIds = (weekGames || []).map((g) => g.id);
+    const safeIds = gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"];
 
     const { data: weekPicks } = await supabase
       .from("picks")
       .select("player_id, game_id, picked_team")
-      .in("game_id", gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"]);
+      .in("game_id", safeIds);
+
+    const { data: weekTiebreakers } = await supabase
+      .from("tiebreakers")
+      .select("player_id, guessed_total")
+      .eq("week", selectedWeek);
 
     setGames(weekGames || []);
     setPlayers(allPlayers || []);
     setPicks(weekPicks || []);
+    setTiebreakers(weekTiebreakers || []);
     setLoading(false);
   }
 
@@ -98,12 +104,63 @@ export default function BoardPage() {
   }
 
   const lockedGames = games.filter((g) => isLocked(g.kickoff_time));
-  const upcomingCount = games.length - lockedGames.length;
+
+  const rows = players.map((p) => {
+    let wins = 0;
+    const cells = lockedGames.map((g) => {
+      const pick = picks.find((pk) => pk.player_id === p.id && pk.game_id === g.id);
+      let status = "pending";
+
+      if (g.is_final && g.home_score !== null && g.away_score !== null) {
+        const winner =
+          g.home_score === g.away_score
+            ? null
+            : g.home_score > g.away_score
+            ? g.home_team
+            : g.away_team;
+
+        if (winner === null) {
+          status = "pending";
+        } else if (pick && pick.picked_team === winner) {
+          status = "correct";
+          wins += 1;
+        } else {
+          status = "wrong";
+        }
+      }
+
+      const logo =
+        pick?.picked_team === g.home_team
+          ? g.home_team_logo
+          : pick?.picked_team === g.away_team
+          ? g.away_team_logo
+          : null;
+
+      return { status, logo };
+    });
+
+    const tb = tiebreakers.find((t) => t.player_id === p.id);
+
+    return { id: p.id, name: p.name, cells, tb: tb?.guessed_total ?? "—", wins };
+  });
+
+  rows.sort((a, b) => b.wins - a.wins);
+
+  const cellBorder = (status) => {
+    if (status === "correct") return "#22c55e";
+    if (status === "wrong") return "#7f1d1d";
+    return "#234431";
+  };
+  const cellBg = (status) => {
+    if (status === "correct") return "#14301f";
+    if (status === "wrong") return "#3a1414";
+    return "transparent";
+  };
 
   return (
-    <div className="container" style={{ maxWidth: 640 }}>
+    <div className="container" style={{ maxWidth: 900 }}>
       <h1>TD Pool</h1>
-      <p className="subtitle">Picks Board</p>
+      <p className="subtitle">Weekly Results</p>
 
       {weeks.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
@@ -136,58 +193,126 @@ export default function BoardPage() {
       ) : lockedGames.length === 0 ? (
         <div className="card">
           <p style={{ margin: 0, color: "#9fb8a8" }}>
-            No games have locked yet for this week. Picks show up here once
+            No games have locked yet for this week. The grid fills in once
             each game is 15 minutes from kickoff.
           </p>
         </div>
       ) : (
-        <>
-          {lockedGames.map((g) => (
-            <div key={g.id} className="card" style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                {g.away_team_logo && (
-                  <img src={g.away_team_logo} alt="" style={{ width: 22, height: 22 }} />
-                )}
-                <strong>
-                  {g.away_team} @ {g.home_team}
-                </strong>
-                {g.home_team_logo && (
-                  <img src={g.home_team_logo} alt="" style={{ width: 22, height: 22 }} />
-                )}
-              </div>
-
-              {players.map((p) => {
-                const pick = picks.find(
-                  (pk) => pk.player_id === p.id && pk.game_id === g.id
-                );
-                return (
-                  <div
-                    key={p.id}
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    background: "#0b1f14",
+                    padding: "8px 12px",
+                    textAlign: "left",
+                    borderBottom: "2px solid #234431",
+                    minWidth: 120,
+                  }}
+                >
+                  Player
+                </th>
+                {lockedGames.map((g) => (
+                  <th
+                    key={g.id}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      padding: "6px 0",
-                      borderTop: "1px solid #234431",
-                      fontSize: 14,
+                      padding: "8px 6px",
+                      borderBottom: "2px solid #234431",
+                      borderLeft: "1px solid #234431",
+                      minWidth: 70,
+                      textAlign: "center",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    <span>{p.name}</span>
-                    <span style={{ color: pick ? "#fff" : "#9fb8a8" }}>
-                      {pick ? pick.picked_team : "No pick"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-
-          {upcomingCount > 0 && (
-            <p style={{ color: "#9fb8a8", fontSize: 13, textAlign: "center" }}>
-              {upcomingCount} more game{upcomingCount > 1 ? "s" : ""} this
-              week — picks will appear once locked.
-            </p>
-          )}
-        </>
+                    {g.away_team_abbr || g.away_team} vs{" "}
+                    {g.home_team_abbr || g.home_team}
+                  </th>
+                ))}
+                <th
+                  style={{
+                    padding: "8px 6px",
+                    borderBottom: "2px solid #234431",
+                    borderLeft: "1px solid #234431",
+                    minWidth: 50,
+                    textAlign: "center",
+                  }}
+                >
+                  TB
+                </th>
+                <th
+                  style={{
+                    padding: "8px 6px",
+                    borderBottom: "2px solid #234431",
+                    borderLeft: "1px solid #234431",
+                    minWidth: 60,
+                    textAlign: "center",
+                  }}
+                >
+                  Wins
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td
+                    style={{
+                      position: "sticky",
+                      left: 0,
+                      background: "#0b1f14",
+                      padding: "8px 12px",
+                      borderBottom: "1px solid #234431",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {row.name}
+                  </td>
+                  {row.cells.map((cell, idx) => (
+                    <td
+                      key={idx}
+                      style={{
+                        padding: "6px",
+                        textAlign: "center",
+                        background: cellBg(cell.status),
+                        border: `1px solid ${cellBorder(cell.status)}`,
+                      }}
+                    >
+                      {cell.logo ? (
+                        <img src={cell.logo} alt="" style={{ width: 22, height: 22 }} />
+                      ) : (
+                        <span style={{ color: "#9fb8a8" }}>—</span>
+                      )}
+                    </td>
+                  ))}
+                  <td
+                    style={{
+                      padding: "8px 6px",
+                      textAlign: "center",
+                      borderBottom: "1px solid #234431",
+                      borderLeft: "1px solid #234431",
+                    }}
+                  >
+                    {row.tb}
+                  </td>
+                  <td
+                    style={{
+                      padding: "8px 6px",
+                      textAlign: "center",
+                      borderBottom: "1px solid #234431",
+                      borderLeft: "1px solid #234431",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {row.wins}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
