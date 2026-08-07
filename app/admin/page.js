@@ -35,6 +35,9 @@ export default function AdminPage() {
   const [playerStatus, setPlayerStatus] = useState([]);
   const [statusLoading, setStatusLoading] = useState(false);
 
+  const [activeSyncConfig, setActiveSyncConfig] = useState(undefined); // undefined = not loaded yet, null = none exists
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   useEffect(() => {
     async function checkAccess() {
       const { data } = await supabase.auth.getSession();
@@ -77,8 +80,14 @@ export default function AdminPage() {
     if (authorized) {
       loadGames();
       loadPlayers();
+      loadActiveSyncConfig();
     }
   }, [authorized]);
+
+  async function loadActiveSyncConfig() {
+    const { data } = await supabase.from("sync_config").select("*").eq("id", 1).single();
+    setActiveSyncConfig(data || null);
+  }
 
   async function loadPlayers() {
     const { data } = await supabase.from("players").select("id, name").order("name");
@@ -182,6 +191,7 @@ export default function AdminPage() {
     setSyncMessage(
       "Auto-sync default saved. It'll run automatically every Tuesday at 4am Central, starting from these settings."
     );
+    loadActiveSyncConfig();
   }
 
   async function handleRefreshLastWeek() {
@@ -393,66 +403,32 @@ export default function AdminPage() {
       )}
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Sync from ESPN</h3>
-        <p style={{ color: "#9fb8a8", fontSize: 14, marginTop: 0 }}>
-          Pulls matchups, kickoff times, logos, and odds straight from ESPN.
-          Uses the &quot;Pool Week&quot; below to file them into your league.
-        </p>
-        <p style={{ color: "#9fb8a8", fontSize: 13, marginTop: -8, marginBottom: 16 }}>
-          Heads up: ESPN counts the Hall of Fame Game as Preseason Week 1 —
-          so the &quot;real&quot; Preseason Weeks 1-3 are actually ESPN Weeks
-          2-4. If you'd rather skip the HOF game entirely, just start your
-          Pool Week 1 at ESPN Week 2.
-        </p>
+        <h3 style={{ marginTop: 0 }}>Season Sync</h3>
 
-        <label htmlFor="poolWeek">Pool Week</label>
-        <input
-          id="poolWeek"
-          type="number"
-          min="1"
-          max="22"
-          value={week}
-          onChange={(e) => setWeek(e.target.value)}
-        />
-
-        <label htmlFor="syncSeasonType">Season Type</label>
-        <select
-          id="syncSeasonType"
-          value={syncSeasonType}
-          onChange={(e) => setSyncSeasonType(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: 8,
-            border: "1px solid #2e5540",
-            background: "#0f2417",
-            color: "#fff",
-            fontSize: 15,
-            marginTop: 6,
-          }}
-        >
-          <option value="1">Preseason</option>
-          <option value="2">Regular Season</option>
-          <option value="3">Postseason</option>
-        </select>
-
-        <label htmlFor="syncWeek">ESPN Week Number</label>
-        <input
-          id="syncWeek"
-          type="number"
-          min="1"
-          max="22"
-          value={syncWeek}
-          onChange={(e) => setSyncWeek(e.target.value)}
-        />
-
-        <label htmlFor="syncYear">Year</label>
-        <input
-          id="syncYear"
-          type="number"
-          value={syncYear}
-          onChange={(e) => setSyncYear(e.target.value)}
-        />
+        {activeSyncConfig === undefined ? (
+          <p style={{ color: "#9fb8a8", margin: 0 }}>Loading...</p>
+        ) : activeSyncConfig === null ? (
+          <p style={{ color: "#fbbf24", margin: 0 }}>
+            Not set up yet — open Advanced below to set the starting week.
+          </p>
+        ) : (
+          <>
+            <p style={{ margin: "0 0 4px 0" }}>
+              Currently syncing <strong>Pool Week {activeSyncConfig.pool_week}</strong>{" "}
+              (
+              {activeSyncConfig.seasontype === 1
+                ? "Preseason"
+                : activeSyncConfig.seasontype === 2
+                ? "Regular Season"
+                : "Postseason"}
+              , ESPN Week {activeSyncConfig.espn_week}, {activeSyncConfig.year})
+            </p>
+            <p style={{ color: "#9fb8a8", fontSize: 13, margin: 0 }}>
+              New weeks load automatically every Tuesday at 4am Central.
+              Scores refresh automatically every 15 minutes. No action needed.
+            </p>
+          </>
+        )}
 
         {syncMessage && (
           <div
@@ -470,22 +446,91 @@ export default function AdminPage() {
           </div>
         )}
 
-        <button onClick={handleSync} disabled={syncing}>
-          {syncing ? "Syncing..." : "Sync Games from ESPN"}
-        </button>
         <button
-          onClick={handleSaveSyncConfig}
-          style={{ background: "#234431", marginTop: 10 }}
+          onClick={() => setShowAdvanced((s) => !s)}
+          style={{ background: "#234431", marginTop: 16 }}
         >
-          Save as Auto-Sync Default
+          {showAdvanced ? "Hide Advanced" : "Advanced / Manual Override"}
         </button>
-        <button
-          onClick={handleRefreshLastWeek}
-          disabled={syncing}
-          style={{ background: "#234431", marginTop: 10 }}
-        >
-          {syncing ? "Refreshing..." : "Refresh Last Week's Scores Now"}
-        </button>
+
+        {showAdvanced && (
+          <div style={{ marginTop: 20, borderTop: "1px solid #234431", paddingTop: 20 }}>
+            <p style={{ color: "#9fb8a8", fontSize: 13, marginTop: 0 }}>
+              Only touch this to set the season's starting week, or to fix
+              something manually if the automation ever gets out of sync.
+            </p>
+            <p style={{ color: "#9fb8a8", fontSize: 13 }}>
+              Heads up: ESPN counts the Hall of Fame Game as Preseason Week 1
+              — the &quot;real&quot; Preseason Weeks 1-3 are ESPN Weeks 2-4.
+            </p>
+
+            <label htmlFor="poolWeek">Pool Week</label>
+            <input
+              id="poolWeek"
+              type="number"
+              min="1"
+              max="22"
+              value={week}
+              onChange={(e) => setWeek(e.target.value)}
+            />
+
+            <label htmlFor="syncSeasonType">Season Type</label>
+            <select
+              id="syncSeasonType"
+              value={syncSeasonType}
+              onChange={(e) => setSyncSeasonType(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #2e5540",
+                background: "#0f2417",
+                color: "#fff",
+                fontSize: 15,
+                marginTop: 6,
+              }}
+            >
+              <option value="1">Preseason</option>
+              <option value="2">Regular Season</option>
+              <option value="3">Postseason</option>
+            </select>
+
+            <label htmlFor="syncWeek">ESPN Week Number</label>
+            <input
+              id="syncWeek"
+              type="number"
+              min="1"
+              max="22"
+              value={syncWeek}
+              onChange={(e) => setSyncWeek(e.target.value)}
+            />
+
+            <label htmlFor="syncYear">Year</label>
+            <input
+              id="syncYear"
+              type="number"
+              value={syncYear}
+              onChange={(e) => setSyncYear(e.target.value)}
+            />
+
+            <button onClick={handleSync} disabled={syncing}>
+              {syncing ? "Syncing..." : "Sync Games from ESPN"}
+            </button>
+            <button
+              onClick={handleSaveSyncConfig}
+              style={{ background: "#234431", marginTop: 10 }}
+            >
+              Save as Auto-Sync Default
+            </button>
+            <button
+              onClick={handleRefreshLastWeek}
+              disabled={syncing}
+              style={{ background: "#234431", marginTop: 10 }}
+            >
+              {syncing ? "Refreshing..." : "Refresh Last Week's Scores Now"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card">
