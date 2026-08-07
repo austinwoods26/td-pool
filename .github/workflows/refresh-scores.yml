@@ -11,6 +11,6 @@ jobs:
     steps:
       - name: Call refresh endpoint
         run: |
-          curl -sS -f -X GET "https://thetdpool.com/api/refresh-scores" \
+          curl -sS -f -L -X GET "https://www.thetdpool.com/api/refresh-scores" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -w "\nHTTP Status: %{http_code}\n"
