@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
 import { ensurePlayerRecord } from "../../lib/players";
+import { getCurrentWeek } from "../../lib/currentWeek";
 
 export default function PicksPage() {
   const supabase = createClient();
@@ -59,20 +60,15 @@ export default function PicksPage() {
   useEffect(() => {
     if (!playerId) return;
 
-    async function loadCurrentWeek() {
-      const { data: config } = await supabase
-        .from("sync_config")
-        .select("pool_week")
-        .eq("id", 1)
-        .single();
-
-      if (config) {
-        setCurrentWeek(Math.max(config.pool_week - 1, 1));
+    async function loadWeek() {
+      const week = await getCurrentWeek(supabase);
+      if (week) {
+        setCurrentWeek(week);
       } else {
         setLoading(false);
       }
     }
-    loadCurrentWeek();
+    loadWeek();
   }, [playerId]);
 
   useEffect(() => {

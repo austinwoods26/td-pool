@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "../../lib/supabase-browser";
 import { ensurePlayerRecord } from "../../lib/players";
+import { getCurrentWeek } from "../../lib/currentWeek";
 
 const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
 
@@ -34,13 +35,7 @@ export default function DashboardPage() {
   }, []);
 
   async function loadSnapshot(session) {
-    const { data: config } = await supabase
-      .from("sync_config")
-      .select("pool_week")
-      .eq("id", 1)
-      .single();
-
-    const week = config ? Math.max(config.pool_week - 1, 1) : null;
+    const week = await getCurrentWeek(supabase);
     setCurrentWeek(week);
 
     if (!week) return;
