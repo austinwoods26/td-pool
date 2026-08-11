@@ -36,8 +36,8 @@ export default function LoginPage() {
 
   return (
     <div
+      className="login-hero"
       style={{
-        minHeight: "100vh",
         width: "100%",
         backgroundImage: "url('/login-bg.jpg')",
         backgroundSize: "cover",
@@ -50,8 +50,6 @@ export default function LoginPage() {
       }}
     >
       {!showForm ? (
-        // Step 1: just her photo, full and unobstructed, with a single
-        // gentle way in
         <div
           style={{
             width: "100%",
@@ -82,7 +80,6 @@ export default function LoginPage() {
           </button>
         </div>
       ) : (
-        // Step 2: the actual form, revealed on request
         <div
           className="container"
           style={{
@@ -143,6 +140,10 @@ export default function LoginPage() {
       )}
 
       <style>{`
+        .login-hero {
+          min-height: 100vh;
+          min-height: 100dvh;
+        }
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
