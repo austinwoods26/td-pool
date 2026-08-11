@@ -120,6 +120,9 @@ export default function StandingsPage() {
     return "transparent";
   };
 
+  const cellBg = "#142a1d"; // matches .card background used everywhere else
+  const cellBorder = "#234431";
+
   return (
     <div
       style={{
@@ -182,7 +185,15 @@ export default function StandingsPage() {
             </p>
           </div>
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div
+            style={{
+              background: "rgba(5, 15, 10, 0.6)",
+              backdropFilter: "blur(6px)",
+              borderRadius: 12,
+              padding: 12,
+              overflowX: "auto",
+            }}
+          >
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
               <thead>
                 <tr>
@@ -190,10 +201,10 @@ export default function StandingsPage() {
                     style={{
                       position: "sticky",
                       left: 0,
-                      background: "#0b1f14",
-                      padding: "8px 12px",
+                      background: cellBg,
+                      padding: "10px 14px",
                       textAlign: "left",
-                      borderBottom: "2px solid #234431",
+                      border: `1px solid ${cellBorder}`,
                       minWidth: 140,
                     }}
                   >
@@ -203,10 +214,10 @@ export default function StandingsPage() {
                     <th
                       key={w}
                       style={{
-                        padding: "8px 6px",
-                        borderBottom: "2px solid #234431",
-                        borderLeft: "1px solid #234431",
-                        minWidth: 50,
+                        padding: "10px 8px",
+                        border: `1px solid ${cellBorder}`,
+                        background: cellBg,
+                        minWidth: 55,
                         textAlign: "center",
                       }}
                     >
@@ -215,10 +226,10 @@ export default function StandingsPage() {
                   ))}
                   <th
                     style={{
-                      padding: "8px 6px",
-                      borderBottom: "2px solid #234431",
-                      borderLeft: "1px solid #234431",
-                      minWidth: 60,
+                      padding: "10px 8px",
+                      border: `1px solid ${cellBorder}`,
+                      background: cellBg,
+                      minWidth: 65,
                       textAlign: "center",
                     }}
                   >
@@ -233,10 +244,10 @@ export default function StandingsPage() {
                       style={{
                         position: "sticky",
                         left: 0,
-                        background: "#0b1f14",
-                        padding: "8px 12px",
-                        borderBottom: "1px solid #234431",
-                        borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : "none",
+                        background: cellBg,
+                        padding: "10px 14px",
+                        border: `1px solid ${cellBorder}`,
+                        borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : `1px solid ${cellBorder}`,
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -246,11 +257,11 @@ export default function StandingsPage() {
                       <td
                         key={w}
                         style={{
-                          padding: "8px 6px",
+                          padding: "10px 8px",
                           textAlign: "center",
-                          borderBottom: "1px solid #234431",
-                          borderLeft: "1px solid #234431",
-                          color: "#9fb8a8",
+                          border: `1px solid ${cellBorder}`,
+                          background: cellBg,
+                          color: "#c9dcd0",
                         }}
                       >
                         {row.weekWins[w]}
@@ -258,10 +269,10 @@ export default function StandingsPage() {
                     ))}
                     <td
                       style={{
-                        padding: "8px 6px",
+                        padding: "10px 8px",
                         textAlign: "center",
-                        borderBottom: "1px solid #234431",
-                        borderLeft: "1px solid #234431",
+                        border: `1px solid ${cellBorder}`,
+                        background: cellBg,
                         fontWeight: 700,
                         color: idx < 3 ? medalColor(idx) : "#fff",
                       }}
