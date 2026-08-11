@@ -121,117 +121,160 @@ export default function StandingsPage() {
   };
 
   return (
-    <div className="container" style={{ maxWidth: 900 }}>
-      <h1>TD Pool</h1>
-      <p className="subtitle">Season Results</p>
-
-      {error && <div className="error">{error}</div>}
-
-      {loading ? (
-        <p>Loading...</p>
-      ) : rows.length === 0 ? (
-        <div className="card">
-          <p style={{ margin: 0, color: "#9fb8a8" }}>No players yet.</p>
-        </div>
-      ) : weeks.length === 0 ? (
-        <div className="card">
-          <p style={{ margin: 0, color: "#9fb8a8" }}>
-            No games have been added yet.
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100%",
+        backgroundColor: "#0b1f14",
+        backgroundImage: "url('/standings-bg.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center top",
+        backgroundRepeat: "no-repeat",
+        backgroundAttachment: "fixed",
+      }}
+    >
+      <div className="container" style={{ maxWidth: 900 }}>
+        <div
+          style={{
+            background: "rgba(5, 15, 10, 0.55)",
+            backdropFilter: "blur(6px)",
+            borderRadius: 12,
+            padding: "18px 22px",
+            marginBottom: 20,
+            textAlign: "center",
+          }}
+        >
+          <h1 style={{ margin: 0 }}>TD Pool</h1>
+          <p className="subtitle" style={{ margin: "4px 0 14px 0" }}>
+            Season Results
+          </p>
+          <p
+            style={{
+              margin: 0,
+              fontStyle: "italic",
+              fontSize: 15,
+              color: "#c9dcd0",
+              borderTop: "1px solid rgba(159,184,168,0.3)",
+              paddingTop: 12,
+            }}
+          >
+            &ldquo;To hell with exciting, I&apos;d rather be drab as hell and
+            win.&rdquo;
+            <br />
+            <span style={{ fontSize: 13, color: "#9fb8a8" }}>
+              — Woody Hayes
+            </span>
           </p>
         </div>
-      ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th
-                  style={{
-                    position: "sticky",
-                    left: 0,
-                    background: "#0b1f14",
-                    padding: "8px 12px",
-                    textAlign: "left",
-                    borderBottom: "2px solid #234431",
-                    minWidth: 140,
-                  }}
-                >
-                  Player
-                </th>
-                {weeks.map((w) => (
+
+        {error && <div className="error">{error}</div>}
+
+        {loading ? (
+          <p>Loading...</p>
+        ) : rows.length === 0 ? (
+          <div className="card">
+            <p style={{ margin: 0, color: "#9fb8a8" }}>No players yet.</p>
+          </div>
+        ) : weeks.length === 0 ? (
+          <div className="card">
+            <p style={{ margin: 0, color: "#9fb8a8" }}>
+              No games have been added yet.
+            </p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+              <thead>
+                <tr>
                   <th
-                    key={w}
-                    style={{
-                      padding: "8px 6px",
-                      borderBottom: "2px solid #234431",
-                      borderLeft: "1px solid #234431",
-                      minWidth: 50,
-                      textAlign: "center",
-                    }}
-                  >
-                    Wk {w}
-                  </th>
-                ))}
-                <th
-                  style={{
-                    padding: "8px 6px",
-                    borderBottom: "2px solid #234431",
-                    borderLeft: "1px solid #234431",
-                    minWidth: 60,
-                    textAlign: "center",
-                  }}
-                >
-                  Total
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => (
-                <tr key={row.id}>
-                  <td
                     style={{
                       position: "sticky",
                       left: 0,
                       background: "#0b1f14",
                       padding: "8px 12px",
-                      borderBottom: "1px solid #234431",
-                      borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : "none",
-                      whiteSpace: "nowrap",
+                      textAlign: "left",
+                      borderBottom: "2px solid #234431",
+                      minWidth: 140,
                     }}
                   >
-                    {row.name}
-                  </td>
+                    Player
+                  </th>
                   {weeks.map((w) => (
-                    <td
+                    <th
                       key={w}
+                      style={{
+                        padding: "8px 6px",
+                        borderBottom: "2px solid #234431",
+                        borderLeft: "1px solid #234431",
+                        minWidth: 50,
+                        textAlign: "center",
+                      }}
+                    >
+                      Wk {w}
+                    </th>
+                  ))}
+                  <th
+                    style={{
+                      padding: "8px 6px",
+                      borderBottom: "2px solid #234431",
+                      borderLeft: "1px solid #234431",
+                      minWidth: 60,
+                      textAlign: "center",
+                    }}
+                  >
+                    Total
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td
+                      style={{
+                        position: "sticky",
+                        left: 0,
+                        background: "#0b1f14",
+                        padding: "8px 12px",
+                        borderBottom: "1px solid #234431",
+                        borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : "none",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {row.name}
+                    </td>
+                    {weeks.map((w) => (
+                      <td
+                        key={w}
+                        style={{
+                          padding: "8px 6px",
+                          textAlign: "center",
+                          borderBottom: "1px solid #234431",
+                          borderLeft: "1px solid #234431",
+                          color: "#9fb8a8",
+                        }}
+                      >
+                        {row.weekWins[w]}
+                      </td>
+                    ))}
+                    <td
                       style={{
                         padding: "8px 6px",
                         textAlign: "center",
                         borderBottom: "1px solid #234431",
                         borderLeft: "1px solid #234431",
-                        color: "#9fb8a8",
+                        fontWeight: 700,
+                        color: idx < 3 ? medalColor(idx) : "#fff",
                       }}
                     >
-                      {row.weekWins[w]}
+                      {row.total}
                     </td>
-                  ))}
-                  <td
-                    style={{
-                      padding: "8px 6px",
-                      textAlign: "center",
-                      borderBottom: "1px solid #234431",
-                      borderLeft: "1px solid #234431",
-                      fontWeight: 700,
-                      color: idx < 3 ? medalColor(idx) : "#fff",
-                    }}
-                  >
-                    {row.total}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
