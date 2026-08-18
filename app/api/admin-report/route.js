@@ -40,7 +40,7 @@ export async function GET(request) {
           : g.away_team;
     });
 
-    // ---- Sheet 1: Season Standings ----
+    // ---- Sheet 1: Season Standings (covers every week regardless) ----
     const standingsRows = (players || []).map((player) => {
       const weekWins = {};
       let total = 0;
@@ -71,9 +71,20 @@ export async function GET(request) {
       ]),
     ];
 
-    // ---- Sheet 2: This week's results (most recent week with games) ----
-    const currentWeek = distinctWeeks[distinctWeeks.length - 1];
-    const weekGames = (allGames || []).filter((g) => g.week === currentWeek);
+    // ---- Sheet 2: results for the last FULLY COMPLETED week --------
+    // (not just "the newest week that exists" -- if the season has already
+    // auto-advanced to a brand new week by the time this report runs, we
+    // still want to report on the week that actually just finished)
+    const completedWeeks = distinctWeeks.filter((w) => {
+      const wg = (allGames || []).filter((g) => g.week === w);
+      return wg.length > 0 && wg.every((g) => g.is_final);
+    });
+    const reportWeek =
+      completedWeeks.length > 0
+        ? completedWeeks[completedWeeks.length - 1]
+        : distinctWeeks[distinctWeeks.length - 1];
+
+    const weekGames = (allGames || []).filter((g) => g.week === reportWeek);
 
     const weekPlayerWins = (players || []).map((player) => {
       let wins = 0;
@@ -115,7 +126,7 @@ export async function GET(request) {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(standingsData), "Season Standings");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(weekData), `Week ${currentWeek}`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(weekData), `Week ${reportWeek}`);
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     const base64 = buffer.toString("base64");
 
@@ -130,13 +141,13 @@ export async function GET(request) {
         winnerBanner = `
           <div style="background:#14301f;border:1px solid #22c55e;border-radius:8px;padding:16px;margin-bottom:20px;">
             <h2 style="margin:0;color:#22c55e;">🏆 This week's winner${weekWinners.length > 1 ? "s were" : " was"} ${weekWinners.join(", ")}, Congrats!</h2>
-            <p style="margin:4px 0 0 0;color:#555;">${topWeekScore} correct picks in Week ${currentWeek}</p>
+            <p style="margin:4px 0 0 0;color:#555;">${topWeekScore} correct picks in Week ${reportWeek}</p>
           </div>
         `;
       } else {
         winnerBanner = `
           <div style="background:#fff8e1;border:1px solid #fbbf24;border-radius:8px;padding:16px;margin-bottom:20px;">
-            <h3 style="margin:0;">Leading Week ${currentWeek} so far: ${weekWinners.join(", ")} (${topWeekScore} correct)</h3>
+            <h3 style="margin:0;">Leading Week ${reportWeek} so far: ${weekWinners.join(", ")} (${topWeekScore} correct)</h3>
             <p style="margin:4px 0 0 0;color:#555;">Not all games have finished yet, so this could still change.</p>
           </div>
         `;
@@ -145,7 +156,7 @@ export async function GET(request) {
 
     await sendEmail({
       to: ADMIN_EMAIL,
-      subject: `TD Pool Weekly Report — Week ${currentWeek}`,
+      subject: `TD Pool Weekly Report — Week ${reportWeek}`,
       html: `
         <h2>TD Pool Weekly Report</h2>
         ${winnerBanner}
@@ -154,13 +165,13 @@ export async function GET(request) {
       `,
       attachments: [
         {
-          filename: `TD_Pool_Report_Week${currentWeek}.xlsx`,
+          filename: `TD_Pool_Report_Week${reportWeek}.xlsx`,
           content: base64,
         },
       ],
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, reportWeek });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
