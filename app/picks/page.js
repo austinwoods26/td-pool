@@ -93,12 +93,21 @@ export default function PicksPage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   });
 
+  // Robust deep-equal via normalized JSON (sorted keys) so the comparison
+  // can't false-positive due to key ordering or subtle type differences
+  function normalize(obj) {
+    const sorted = {};
+    Object.keys(obj)
+      .sort()
+      .forEach((k) => {
+        if (obj[k] !== undefined && obj[k] !== "") sorted[k] = obj[k];
+      });
+    return JSON.stringify(sorted);
+  }
+
   function isDirty() {
-    if (tiebreaker !== savedTiebreaker) return true;
-    const pickKeys = Object.keys(picks);
-    const savedKeys = Object.keys(savedPicks);
-    if (pickKeys.length !== savedKeys.length) return true;
-    return pickKeys.some((k) => picks[k] !== savedPicks[k]);
+    if ((tiebreaker || "") !== (savedTiebreaker || "")) return true;
+    return normalize(picks) !== normalize(savedPicks);
   }
 
   async function loadWeekData() {
@@ -124,8 +133,6 @@ export default function PicksPage() {
     (existingPicks || []).forEach((p) => {
       pickMap[p.game_id] = p.picked_team;
     });
-    setPicks(pickMap);
-    setSavedPicks(pickMap);
 
     const { data: existingTiebreaker } = await supabase
       .from("tiebreakers")
@@ -135,6 +142,11 @@ export default function PicksPage() {
       .single();
 
     const tbValue = existingTiebreaker ? String(existingTiebreaker.guessed_total) : "";
+
+    // Set picks and their "saved" snapshot together, in the same batch,
+    // so there's never a render where they're out of sync
+    setPicks(pickMap);
+    setSavedPicks(pickMap);
     setTiebreaker(tbValue);
     setSavedTiebreaker(tbValue);
 
@@ -227,7 +239,9 @@ export default function PicksPage() {
     );
   }
 
-  const unsaved = isDirty();
+  // Never show the unsaved banner while data is still loading/transitioning
+  // between weeks -- that's what was causing the false-positive flashes
+  const unsaved = !loading && isDirty();
 
   return (
     <div
