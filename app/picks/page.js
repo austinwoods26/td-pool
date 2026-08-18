@@ -19,6 +19,11 @@ export default function PicksPage() {
   const [picks, setPicks] = useState({});
   const [tiebreaker, setTiebreaker] = useState("");
 
+  // Snapshot of what's actually SAVED in the database, so we can detect
+  // unsaved changes and nag the player before they navigate away
+  const [savedPicks, setSavedPicks] = useState({});
+  const [savedTiebreaker, setSavedTiebreaker] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -76,6 +81,26 @@ export default function PicksPage() {
     loadWeekData();
   }, [currentWeek, playerId]);
 
+  // Warn on tab close / navigation away if there are unsaved changes
+  useEffect(() => {
+    function handleBeforeUnload(e) {
+      if (isDirty()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  });
+
+  function isDirty() {
+    if (tiebreaker !== savedTiebreaker) return true;
+    const pickKeys = Object.keys(picks);
+    const savedKeys = Object.keys(savedPicks);
+    if (pickKeys.length !== savedKeys.length) return true;
+    return pickKeys.some((k) => picks[k] !== savedPicks[k]);
+  }
+
   async function loadWeekData() {
     setLoading(true);
     setMessage("");
@@ -100,6 +125,7 @@ export default function PicksPage() {
       pickMap[p.game_id] = p.picked_team;
     });
     setPicks(pickMap);
+    setSavedPicks(pickMap);
 
     const { data: existingTiebreaker } = await supabase
       .from("tiebreakers")
@@ -108,9 +134,9 @@ export default function PicksPage() {
       .eq("week", currentWeek)
       .single();
 
-    setTiebreaker(
-      existingTiebreaker ? String(existingTiebreaker.guessed_total) : ""
-    );
+    const tbValue = existingTiebreaker ? String(existingTiebreaker.guessed_total) : "";
+    setTiebreaker(tbValue);
+    setSavedTiebreaker(tbValue);
 
     setLoading(false);
   }
@@ -139,6 +165,7 @@ export default function PicksPage() {
 
   function handlePick(gameId, team) {
     setPicks((prev) => ({ ...prev, [gameId]: team }));
+    setMessage("");
   }
 
   async function handleSave() {
@@ -186,6 +213,8 @@ export default function PicksPage() {
       }
     }
 
+    setSavedPicks(picks);
+    setSavedTiebreaker(tiebreaker);
     setSaving(false);
     setMessage("Picks saved!");
   }
@@ -198,6 +227,8 @@ export default function PicksPage() {
     );
   }
 
+  const unsaved = isDirty();
+
   return (
     <div
       style={{
@@ -209,6 +240,7 @@ export default function PicksPage() {
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
         backgroundAttachment: "fixed",
+        paddingBottom: unsaved ? 90 : 0,
       }}
     >
       <div className="container" style={{ maxWidth: 640 }}>
@@ -326,7 +358,10 @@ export default function PicksPage() {
                         type="number"
                         disabled={locked}
                         value={tiebreaker}
-                        onChange={(e) => setTiebreaker(e.target.value)}
+                        onChange={(e) => {
+                          setTiebreaker(e.target.value);
+                          setMessage("");
+                        }}
                         placeholder="e.g. 45"
                       />
                     </div>
@@ -350,7 +385,7 @@ export default function PicksPage() {
               </div>
             )}
 
-            <button onClick={handleSave} disabled={saving}>
+            <button onClick={handleSave} disabled={saving} style={{ marginBottom: 100 }}>
               {saving ? "Saving..." : "Save Picks"}
             </button>
           </>
@@ -367,6 +402,44 @@ export default function PicksPage() {
           Background photo by JarredB24 (Flickr, CC BY-NC 2.0)
         </p>
       </div>
+
+      {unsaved && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 60,
+            background: "#7f1d1d",
+            borderTop: "2px solid #fca5a5",
+            padding: "14px 20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            boxShadow: "0 -4px 20px rgba(0,0,0,0.4)",
+          }}
+        >
+          <span style={{ fontWeight: 700, fontSize: 14 }}>
+            ⚠️ You have unsaved picks!
+          </span>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              width: "auto",
+              margin: 0,
+              padding: "10px 20px",
+              background: "#fff",
+              color: "#7f1d1d",
+              fontWeight: 700,
+            }}
+          >
+            {saving ? "Saving..." : "Save Now"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

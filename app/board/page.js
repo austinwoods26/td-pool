@@ -105,6 +105,12 @@ export default function BoardPage() {
 
   const lockedGames = games.filter((g) => isLocked(g.kickoff_time));
 
+  // The tiebreaker is tied to the LAST game of the week -- only reveal
+  // everyone's guesses once that specific game has locked, so it can't
+  // be used to copy someone else's guess beforehand
+  const lastGameOfWeek = games[games.length - 1];
+  const tiebreakerRevealed = lastGameOfWeek ? isLocked(lastGameOfWeek.kickoff_time) : false;
+
   const rows = players.map((p) => {
     let wins = 0;
     const cells = lockedGames.map((g) => {
@@ -146,6 +152,14 @@ export default function BoardPage() {
 
   rows.sort((a, b) => b.wins - a.wins);
 
+  // Is the whole week actually decided? (every game either final or a push)
+  const weekFullyDecided =
+    games.length > 0 && games.every((g) => g.is_final);
+  const topScore = rows.length > 0 ? rows[0].wins : 0;
+  const weekWinners = weekFullyDecided
+    ? rows.filter((r) => r.wins === topScore).map((r) => r.name)
+    : [];
+
   const cellBorder = (status) => {
     if (status === "correct") return "#22c55e";
     if (status === "wrong") return "#7f1d1d";
@@ -185,6 +199,27 @@ export default function BoardPage() {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {!loading && weekFullyDecided && weekWinners.length > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 20,
+            background: "#1a2e12",
+            border: "1px solid #ffd700",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 22, marginBottom: 4 }}>🏆</div>
+          <strong style={{ fontSize: 17 }}>
+            Week {selectedWeek} Winner{weekWinners.length > 1 ? "s" : ""}:{" "}
+            {weekWinners.join(", ")}
+          </strong>
+          <div style={{ color: "#9fb8a8", fontSize: 13, marginTop: 4 }}>
+            {topScore} correct picks
+          </div>
         </div>
       )}
 
@@ -295,7 +330,7 @@ export default function BoardPage() {
                       borderLeft: "1px solid #234431",
                     }}
                   >
-                    {row.tb}
+                    {tiebreakerRevealed ? row.tb : "🔒"}
                   </td>
                   <td
                     style={{

@@ -18,11 +18,17 @@ export default function Nav() {
   useEffect(() => {
     async function checkSession() {
       const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        setEmail(data.session.user.email);
-      }
+      setEmail(data.session?.user?.email ?? null);
     }
     checkSession();
+
+    // React immediately to login/logout, not just on initial mount --
+    // fixes the bug where the menu didn't appear until a manual refresh
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setEmail(session?.user?.email ?? null);
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   async function handleLogout() {
@@ -36,10 +42,7 @@ export default function Nav() {
     router.push(path);
   }
 
-  // Never show on the login/signup pages, even if a session still exists
   if (HIDE_ON_PATHS.includes(pathname)) return null;
-
-  // Not logged in — show nothing
   if (!email) return null;
 
   const isAdmin = ADMIN_EMAILS.includes(email);
@@ -56,7 +59,6 @@ export default function Nav() {
 
   return (
     <>
-      {/* Hamburger toggle button */}
       <button
         onClick={() => setOpen(true)}
         aria-label="Open menu"
@@ -81,7 +83,6 @@ export default function Nav() {
         ☰
       </button>
 
-      {/* Overlay */}
       {open && (
         <div
           onClick={() => setOpen(false)}
@@ -94,7 +95,6 @@ export default function Nav() {
         />
       )}
 
-      {/* Sidebar panel */}
       <div
         style={{
           position: "fixed",
@@ -149,9 +149,14 @@ export default function Nav() {
           Standings
         </a>
         {isAdmin && (
-          <a onClick={() => go("/admin")} style={linkStyle}>
-            Admin
-          </a>
+          <>
+            <a onClick={() => go("/admin")} style={linkStyle}>
+              Admin
+            </a>
+            <a onClick={() => go("/admin/edit-picks")} style={{ ...linkStyle, fontSize: 13, paddingLeft: 28, color: "#9fb8a8" }}>
+              ↳ Edit Player Picks
+            </a>
+          </>
         )}
 
         <div style={{ marginTop: "auto" }}>
