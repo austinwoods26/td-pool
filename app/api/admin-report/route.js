@@ -14,7 +14,7 @@ export async function GET(request) {
   const supabase = createServiceClient();
 
   try {
-    const { data: players } = await supabase.from("players").select("id, name");
+    const { data: players } = await supabase.from("players").select("id, name, email");
     const { data: allGames } = await supabase
       .from("games")
       .select("id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time")
@@ -72,9 +72,6 @@ export async function GET(request) {
     ];
 
     // ---- Sheet 2: results for the last FULLY COMPLETED week --------
-    // (not just "the newest week that exists" -- if the season has already
-    // auto-advanced to a brand new week by the time this report runs, we
-    // still want to report on the week that actually just finished)
     const completedWeeks = distinctWeeks.filter((w) => {
       const wg = (allGames || []).filter((g) => g.week === w);
       return wg.length > 0 && wg.every((g) => g.is_final);
@@ -154,14 +151,22 @@ export async function GET(request) {
       }
     }
 
+    // Send to the admin directly, and BCC every other player so everyone
+    // gets the report without seeing each other's email addresses
+    const otherPlayerEmails = (players || [])
+      .map((p) => p.email)
+      .filter((e) => e && e.toLowerCase() !== ADMIN_EMAIL.toLowerCase());
+
     await sendEmail({
       to: ADMIN_EMAIL,
+      bcc: otherPlayerEmails,
       subject: `TD Pool Weekly Report — Week ${reportWeek}`,
       html: `
         <h2>TD Pool Weekly Report</h2>
         ${winnerBanner}
         <p><strong>Season standings (top 3):</strong><br>${topThree}</p>
         <p>Full standings and this week's results are attached as an Excel file.</p>
+        <p><a href="https://www.thetdpool.com/standings">View full standings on the site →</a></p>
       `,
       attachments: [
         {
@@ -171,7 +176,7 @@ export async function GET(request) {
       ],
     });
 
-    return NextResponse.json({ success: true, reportWeek });
+    return NextResponse.json({ success: true, reportWeek, sentTo: otherPlayerEmails.length + 1 });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
