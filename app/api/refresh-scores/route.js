@@ -29,8 +29,7 @@ export async function GET(request) {
   try {
     let refreshed = 0;
 
-    // Refresh whatever week the config currently points at (the week whose
-    // games haven't been "closed out" yet)
+    // Refresh whatever week the config currently points at
     const currentGames = await fetchEspnWeek(
       currentEspnWeek,
       config.year,
@@ -45,9 +44,12 @@ export async function GET(request) {
       refreshed += currentRows.length;
     }
 
-    // Also refresh last week, in case a late game finished after the last run
+    // Also refresh last week's scores -- but ONLY if there actually IS a
+    // previous pool week (guards against Pool Week 1 wrapping back into
+    // whatever came before a season reset, e.g. old preseason weeks
+    // incorrectly getting labeled "Week 0")
     const prev = getPreviousWeek(config.seasontype, config.espn_week);
-    if (prev) {
+    if (currentPoolWeek > 1 && prev) {
       const prevGames = await fetchEspnWeek(prev.week, config.year, prev.seasontype);
       const prevRows = prevGames.map((g) => ({
         ...g,
@@ -59,12 +61,8 @@ export async function GET(request) {
       }
     }
 
-    // Check whether the ACTIVE pool week (the one currently open for picks)
-    // is entirely finished. If so, and next week hasn't been loaded yet,
-    // advance immediately instead of waiting for Tuesday's scheduled sync.
-    // This matters for short weeks (e.g. a single Thursday game) where
-    // waiting days for the weekly cron would leave players with nothing
-    // to pick in the meantime.
+    // Check whether the ACTIVE pool week is entirely finished, and if so,
+    // advance immediately instead of waiting for the weekly schedule
     let advanced = false;
     const activePoolWeek = currentPoolWeek;
 
@@ -82,7 +80,6 @@ export async function GET(request) {
       const next = getNextWeek(config.seasontype, config.espn_week);
       const nextPoolWeek = currentPoolWeek + 1;
 
-      // Only advance if we haven't already loaded next week's games
       const { data: alreadyLoaded } = await supabase
         .from("games")
         .select("id")
