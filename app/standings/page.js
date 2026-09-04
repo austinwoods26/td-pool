@@ -43,10 +43,20 @@ export default function StandingsPage() {
 
     const { data: allGames, error: gamesError } = await supabase
       .from("games")
-      .select("id, week, home_team, away_team, home_score, away_score, is_final");
+      .select("id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time");
 
     if (gamesError) {
       setError(gamesError.message);
+      setLoading(false);
+      return;
+    }
+
+    const { data: tiebreakers, error: tbError } = await supabase
+      .from("tiebreakers")
+      .select("player_id, week, guessed_total");
+
+    if (tbError) {
+      setError(tbError.message);
       setLoading(false);
       return;
     }
@@ -79,6 +89,19 @@ export default function StandingsPage() {
           : g.away_team;
     });
 
+    // Actual combined score of the LAST (by kickoff) final game in each
+    // week -- that's the game each week's tiebreaker guess is based on
+    const weekFinalTotals = {};
+    finalGames.forEach((g) => {
+      const existing = weekFinalTotals[g.week];
+      if (!existing || new Date(g.kickoff_time) > new Date(existing.kickoff_time)) {
+        weekFinalTotals[g.week] = {
+          kickoff_time: g.kickoff_time,
+          actual_total: g.home_score + g.away_score,
+        };
+      }
+    });
+
     const results = players.map((player) => {
       const weekWins = {};
       let total = 0;
@@ -96,10 +119,28 @@ export default function StandingsPage() {
         total += wins;
       });
 
-      return { id: player.id, name: player.name, weekWins, total };
+      // Cumulative tiebreaker accuracy across every graded week
+      const playerTiebreakers = tiebreakers.filter(
+        (t) => t.player_id === player.id && weekFinalTotals[t.week]
+      );
+      const tiebreakerDiff = playerTiebreakers.reduce(
+        (sum, t) => sum + Math.abs(t.guessed_total - weekFinalTotals[t.week].actual_total),
+        0
+      );
+      const hasTiebreakerData = playerTiebreakers.length > 0;
+
+      return { id: player.id, name: player.name, weekWins, total, tiebreakerDiff, hasTiebreakerData };
     });
 
-    results.sort((a, b) => b.total - a.total);
+    results.sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      // Tied on total wins -- closer cumulative tiebreaker guess wins.
+      // Players with no tiebreaker data fall to the bottom of a tie.
+      if (a.hasTiebreakerData !== b.hasTiebreakerData) {
+        return a.hasTiebreakerData ? -1 : 1;
+      }
+      return a.tiebreakerDiff - b.tiebreakerDiff;
+    });
 
     setRows(results);
     setLoading(false);
@@ -120,8 +161,14 @@ export default function StandingsPage() {
     return "transparent";
   };
 
-  const cellBg = "#142a1d"; // matches .card background used everywhere else
+  const cellBg = "#142a1d";
   const cellBorder = "#234431";
+
+  // Detect if there's an actual tie at the top that tiebreaker data resolved,
+  // so we can show a small transparency note
+  const tiesExist = rows.some(
+    (r, idx) => idx > 0 && r.total === rows[idx - 1].total
+  );
 
   return (
     <div
@@ -185,105 +232,113 @@ export default function StandingsPage() {
             </p>
           </div>
         ) : (
-          <div
-            style={{
-              background: "rgba(5, 15, 10, 0.6)",
-              backdropFilter: "blur(6px)",
-              borderRadius: 12,
-              padding: 12,
-              overflowX: "auto",
-            }}
-          >
-            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-              <thead>
-                <tr>
-                  <th
-                    style={{
-                      position: "sticky",
-                      left: 0,
-                      background: cellBg,
-                      padding: "10px 14px",
-                      textAlign: "left",
-                      border: `1px solid ${cellBorder}`,
-                      minWidth: 140,
-                    }}
-                  >
-                    Player
-                  </th>
-                  {weeks.map((w) => (
+          <>
+            <div
+              style={{
+                background: "rgba(5, 15, 10, 0.6)",
+                backdropFilter: "blur(6px)",
+                borderRadius: 12,
+                padding: 12,
+                overflowX: "auto",
+              }}
+            >
+              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+                <thead>
+                  <tr>
                     <th
-                      key={w}
-                      style={{
-                        padding: "10px 8px",
-                        border: `1px solid ${cellBorder}`,
-                        background: cellBg,
-                        minWidth: 55,
-                        textAlign: "center",
-                      }}
-                    >
-                      Wk {w}
-                    </th>
-                  ))}
-                  <th
-                    style={{
-                      padding: "10px 8px",
-                      border: `1px solid ${cellBorder}`,
-                      background: cellBg,
-                      minWidth: 65,
-                      textAlign: "center",
-                    }}
-                  >
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, idx) => (
-                  <tr key={row.id}>
-                    <td
                       style={{
                         position: "sticky",
                         left: 0,
                         background: cellBg,
                         padding: "10px 14px",
+                        textAlign: "left",
                         border: `1px solid ${cellBorder}`,
-                        borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : `1px solid ${cellBorder}`,
-                        whiteSpace: "nowrap",
+                        minWidth: 140,
                       }}
                     >
-                      {row.name}
-                    </td>
+                      Player
+                    </th>
                     {weeks.map((w) => (
-                      <td
+                      <th
                         key={w}
+                        style={{
+                          padding: "10px 8px",
+                          border: `1px solid ${cellBorder}`,
+                          background: cellBg,
+                          minWidth: 55,
+                          textAlign: "center",
+                        }}
+                      >
+                        Wk {w}
+                      </th>
+                    ))}
+                    <th
+                      style={{
+                        padding: "10px 8px",
+                        border: `1px solid ${cellBorder}`,
+                        background: cellBg,
+                        minWidth: 65,
+                        textAlign: "center",
+                      }}
+                    >
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => (
+                    <tr key={row.id}>
+                      <td
+                        style={{
+                          position: "sticky",
+                          left: 0,
+                          background: cellBg,
+                          padding: "10px 14px",
+                          border: `1px solid ${cellBorder}`,
+                          borderLeft: idx < 3 ? `3px solid ${medalColor(idx)}` : `1px solid ${cellBorder}`,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {row.name}
+                      </td>
+                      {weeks.map((w) => (
+                        <td
+                          key={w}
+                          style={{
+                            padding: "10px 8px",
+                            textAlign: "center",
+                            border: `1px solid ${cellBorder}`,
+                            background: cellBg,
+                            color: "#c9dcd0",
+                          }}
+                        >
+                          {row.weekWins[w]}
+                        </td>
+                      ))}
+                      <td
                         style={{
                           padding: "10px 8px",
                           textAlign: "center",
                           border: `1px solid ${cellBorder}`,
                           background: cellBg,
-                          color: "#c9dcd0",
+                          fontWeight: 700,
+                          color: idx < 3 ? medalColor(idx) : "#fff",
                         }}
                       >
-                        {row.weekWins[w]}
+                        {row.total}
                       </td>
-                    ))}
-                    <td
-                      style={{
-                        padding: "10px 8px",
-                        textAlign: "center",
-                        border: `1px solid ${cellBorder}`,
-                        background: cellBg,
-                        fontWeight: 700,
-                        color: idx < 3 ? medalColor(idx) : "#fff",
-                      }}
-                    >
-                      {row.total}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {tiesExist && (
+              <p style={{ color: "#9fb8a8", fontSize: 12, textAlign: "center", marginTop: 12 }}>
+                Ties in total wins are broken using cumulative tiebreaker accuracy.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>
