@@ -1,7 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
-import { createServiceClient } from "@/lib/supabase-server";
 
 const ADMIN_EMAILS = ["austin.woods5526@gmail.com"];
+
+// Built directly here (instead of importing a shared helper) so this route
+// doesn't depend on guessing the name/path of any existing file.
+function createServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+}
 
 export async function POST(req) {
   try {
