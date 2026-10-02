@@ -146,8 +146,9 @@ export default function BoardPage() {
     });
 
     const tb = tiebreakers.find((t) => t.player_id === p.id);
+    const rawTb = tb ? tb.guessed_total : null;
 
-    return { id: p.id, name: p.name, cells, tb: tb?.guessed_total ?? "—", wins };
+    return { id: p.id, name: p.name, cells, tb: rawTb ?? "—", rawTb, wins };
   });
 
   rows.sort((a, b) => b.wins - a.wins);
@@ -156,9 +157,40 @@ export default function BoardPage() {
   const weekFullyDecided =
     games.length > 0 && games.every((g) => g.is_final);
   const topScore = rows.length > 0 ? rows[0].wins : 0;
-  const weekWinners = weekFullyDecided
-    ? rows.filter((r) => r.wins === topScore).map((r) => r.name)
-    : [];
+
+  // Actual combined score of the week's final (last-by-kickoff) game --
+  // this is what everyone's tiebreaker guess is measured against.
+  const actualTotal =
+    weekFullyDecided &&
+    lastGameOfWeek &&
+    lastGameOfWeek.home_score !== null &&
+    lastGameOfWeek.away_score !== null
+      ? lastGameOfWeek.home_score + lastGameOfWeek.away_score
+      : null;
+
+  const tiedAtTop = weekFullyDecided ? rows.filter((r) => r.wins === topScore) : [];
+
+  // Weekly winner = most wins. If more than one player is tied on wins,
+  // whoever's tiebreaker guess is closest to the actual combined score
+  // of the week's last game wins outright; if they're equally close, it's
+  // a true tie.
+  let weekWinners = [];
+  let tiebreakerDecided = false;
+
+  if (weekFullyDecided && tiedAtTop.length === 1) {
+    weekWinners = [tiedAtTop[0].name];
+  } else if (weekFullyDecided && tiedAtTop.length > 1 && actualTotal !== null) {
+    const withDiff = tiedAtTop.map((r) => ({
+      ...r,
+      diff: r.rawTb !== null ? Math.abs(r.rawTb - actualTotal) : Infinity,
+    }));
+    const minDiff = Math.min(...withDiff.map((r) => r.diff));
+    weekWinners = withDiff.filter((r) => r.diff === minDiff).map((r) => r.name);
+    tiebreakerDecided = weekWinners.length < tiedAtTop.length;
+  } else if (weekFullyDecided && tiedAtTop.length > 1) {
+    // Tied on wins but no tiebreaker data to break it with
+    weekWinners = tiedAtTop.map((r) => r.name);
+  }
 
   const cellBorder = (status) => {
     if (status === "correct") return "#22c55e";
@@ -219,6 +251,12 @@ export default function BoardPage() {
           </strong>
           <div style={{ color: "#9fb8a8", fontSize: 13, marginTop: 4 }}>
             {topScore} correct picks
+            {tiedAtTop.length > 1 && tiebreakerDecided && actualTotal !== null && (
+              <> &middot; won on tiebreaker (actual: {actualTotal})</>
+            )}
+            {tiedAtTop.length > 1 && !tiebreakerDecided && weekWinners.length > 1 && (
+              <> &middot; tied on tiebreaker</>
+            )}
           </div>
         </div>
       )}
