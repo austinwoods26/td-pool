@@ -13,22 +13,54 @@ export async function GET(request) {
 
   const supabase = createServiceClient();
 
+  // Supabase/PostgREST only returns up to 1000 rows per request by default
+  // -- it does NOT error when there's more, it just silently truncates.
+  // This pages through with .range() until every row has been fetched, so
+  // the report stays correct no matter how big the picks table gets.
+  async function fetchAllRows(table, select, applyFilters) {
+    const pageSize = 1000;
+    let from = 0;
+    let allRows = [];
+
+    while (true) {
+      let query = supabase.from(table).select(select);
+      if (applyFilters) query = applyFilters(query);
+      query = query.range(from, from + pageSize - 1);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      allRows = allRows.concat(data || []);
+
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return allRows;
+  }
+
   try {
-    const { data: players } = await supabase.from("players").select("id, name, email");
-    const { data: allGames } = await supabase
-      .from("games")
-      .select("id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time")
-      .order("kickoff_time", { ascending: true });
+    const players = await fetchAllRows("players", "id, name, email");
+    const allGames = await fetchAllRows(
+      "games",
+      "id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time",
+      (query) => query.order("kickoff_time", { ascending: true })
+    );
 
     const distinctWeeks = [...new Set((allGames || []).map((g) => g.week))].sort((a, b) => a - b);
     const finalGames = (allGames || []).filter((g) => g.is_final);
     const gameIds = finalGames.map((g) => g.id);
     const safeIds = gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"];
 
-    const { data: allPicks } = await supabase
-      .from("picks")
-      .select("player_id, game_id, picked_team")
-      .in("game_id", safeIds);
+    const allPicks = await fetchAllRows(
+      "picks",
+      "player_id, game_id, picked_team",
+      (query) =>
+        query
+          .in("game_id", safeIds)
+          .order("player_id", { ascending: true })
+          .order("game_id", { ascending: true })
+    );
 
     const winners = {};
     finalGames.forEach((g) => {
@@ -151,32 +183,61 @@ export async function GET(request) {
       }
     }
 
-    // Send to the admin directly, and BCC every other player so everyone
-    // gets the report without seeing each other's email addresses
-    const otherPlayerEmails = (players || [])
-      .map((p) => p.email)
-      .filter((e) => e && e.toLowerCase() !== ADMIN_EMAIL.toLowerCase());
+    // ---- Send: one individual email per player, instead of a single ----
+    // ---- email with everyone bcc'd. A "to: one address, bcc: a big  ----
+    // ---- list" pattern is a classic bulk-mail fingerprint that spam ----
+    // ---- filters (Gmail especially) tend to flag -- sending each    ----
+    // ---- player their own message looks like normal mail and lands ----
+    // ---- reliably in the inbox instead.                             ----
+    const recipients = (players || []).filter((p) => p.email);
 
-    await sendEmail({
-      to: ADMIN_EMAIL,
-      bcc: otherPlayerEmails,
-      subject: `TD Pool Weekly Report — Week ${reportWeek}`,
-      html: `
-        <h2>TD Pool Weekly Report</h2>
-        ${winnerBanner}
-        <p><strong>Season standings (top 3):</strong><br>${topThree}</p>
-        <p>Full standings and this week's results are attached as an Excel file.</p>
-        <p><a href="https://www.thetdpool.com/standings">View full standings on the site →</a></p>
-      `,
-      attachments: [
-        {
-          filename: `TD_Pool_Report_Week${reportWeek}.xlsx`,
-          content: base64,
-        },
-      ],
+    const buildHtml = (player) => `
+      <p>Hi ${player.name || "there"},</p>
+      <h2>TD Pool Weekly Report</h2>
+      ${winnerBanner}
+      <p><strong>Season standings (top 3):</strong><br>${topThree}</p>
+      <p>Full standings and this week's results are attached as an Excel file.</p>
+      <p><a href="https://www.thetdpool.com/standings">View full standings on the site →</a></p>
+    `;
+
+    const results = await Promise.allSettled(
+      recipients.map((player, idx) =>
+        // A small stagger between sends is gentle on Resend's rate limit
+        // and doesn't meaningfully slow this down for a handful of players.
+        new Promise((resolve) => setTimeout(resolve, idx * 150)).then(() =>
+          sendEmail({
+            to: player.email,
+            subject: `TD Pool Weekly Report — Week ${reportWeek}`,
+            html: buildHtml(player),
+            attachments: [
+              {
+                filename: `TD_Pool_Report_Week${reportWeek}.xlsx`,
+                content: base64,
+              },
+            ],
+          })
+        )
+      )
+    );
+
+    const failed = results
+      .map((r, idx) => ({ r, email: recipients[idx]?.email }))
+      .filter((x) => x.r.status === "rejected");
+
+    if (failed.length > 0) {
+      console.error(
+        "Weekly report failed to send to:",
+        failed.map((f) => `${f.email}: ${f.r.reason}`).join("; ")
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      reportWeek,
+      sentTo: recipients.length - failed.length,
+      failedCount: failed.length,
+      failedEmails: failed.map((f) => f.email),
     });
-
-    return NextResponse.json({ success: true, reportWeek, sentTo: otherPlayerEmails.length + 1 });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

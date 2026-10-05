@@ -27,123 +27,133 @@ export default function StandingsPage() {
     init();
   }, []);
 
+  // Supabase/PostgREST only returns up to 1000 rows per request by default
+  // -- it does NOT error when there's more, it just silently truncates.
+  // This pages through with .range() until every row has been fetched,
+  // so standings stay correct no matter how big the picks table gets.
+  async function fetchAllRows(table, select, applyFilters) {
+    const pageSize = 1000;
+    let from = 0;
+    let allRows = [];
+
+    while (true) {
+      let query = supabase.from(table).select(select);
+      if (applyFilters) query = applyFilters(query);
+      query = query.range(from, from + pageSize - 1);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      allRows = allRows.concat(data || []);
+
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return allRows;
+  }
+
   async function loadStandings() {
     setLoading(true);
     setError("");
 
-    const { data: players, error: playersError } = await supabase
-      .from("players")
-      .select("id, name");
+    try {
+      const players = await fetchAllRows("players", "id, name");
+      const allGames = await fetchAllRows(
+        "games",
+        "id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time"
+      );
+      const tiebreakers = await fetchAllRows("tiebreakers", "player_id, week, guessed_total");
 
-    if (playersError) {
-      setError(playersError.message);
-      setLoading(false);
-      return;
-    }
+      const distinctWeeks = [...new Set(allGames.map((g) => g.week))].sort((a, b) => a - b);
+      setWeeks(distinctWeeks);
 
-    const { data: allGames, error: gamesError } = await supabase
-      .from("games")
-      .select("id, week, home_team, away_team, home_score, away_score, is_final, kickoff_time");
+      const finalGames = allGames.filter((g) => g.is_final);
+      const gameIds = finalGames.map((g) => g.id);
+      const safeIds = gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"];
 
-    if (gamesError) {
-      setError(gamesError.message);
-      setLoading(false);
-      return;
-    }
+      const picks = await fetchAllRows(
+        "picks",
+        "player_id, game_id, picked_team",
+        (query) =>
+          query
+            .in("game_id", safeIds)
+            // Deterministic order is required for .range() paging to be
+            // reliable -- without it, Postgres doesn't guarantee the same
+            // row order across separate page requests.
+            .order("player_id", { ascending: true })
+            .order("game_id", { ascending: true })
+      );
 
-    const { data: tiebreakers, error: tbError } = await supabase
-      .from("tiebreakers")
-      .select("player_id, week, guessed_total");
-
-    if (tbError) {
-      setError(tbError.message);
-      setLoading(false);
-      return;
-    }
-
-    const distinctWeeks = [...new Set(allGames.map((g) => g.week))].sort((a, b) => a - b);
-    setWeeks(distinctWeeks);
-
-    const finalGames = allGames.filter((g) => g.is_final);
-    const gameIds = finalGames.map((g) => g.id);
-    const safeIds = gameIds.length > 0 ? gameIds : ["00000000-0000-0000-0000-000000000000"];
-
-    const { data: picks, error: picksError } = await supabase
-      .from("picks")
-      .select("player_id, game_id, picked_team")
-      .in("game_id", safeIds);
-
-    if (picksError) {
-      setError(picksError.message);
-      setLoading(false);
-      return;
-    }
-
-    const winners = {};
-    finalGames.forEach((g) => {
-      winners[g.id] =
-        g.home_score === g.away_score
-          ? null
-          : g.home_score > g.away_score
-          ? g.home_team
-          : g.away_team;
-    });
-
-    // Actual combined score of the LAST (by kickoff) final game in each
-    // week -- that's the game each week's tiebreaker guess is based on
-    const weekFinalTotals = {};
-    finalGames.forEach((g) => {
-      const existing = weekFinalTotals[g.week];
-      if (!existing || new Date(g.kickoff_time) > new Date(existing.kickoff_time)) {
-        weekFinalTotals[g.week] = {
-          kickoff_time: g.kickoff_time,
-          actual_total: g.home_score + g.away_score,
-        };
-      }
-    });
-
-    const results = players.map((player) => {
-      const weekWins = {};
-      let total = 0;
-
-      distinctWeeks.forEach((w) => {
-        const weekGameIds = finalGames.filter((g) => g.week === w).map((g) => g.id);
-        const wins = picks.filter(
-          (pk) =>
-            pk.player_id === player.id &&
-            weekGameIds.includes(pk.game_id) &&
-            winners[pk.game_id] &&
-            pk.picked_team === winners[pk.game_id]
-        ).length;
-        weekWins[w] = wins;
-        total += wins;
+      const winners = {};
+      finalGames.forEach((g) => {
+        winners[g.id] =
+          g.home_score === g.away_score
+            ? null
+            : g.home_score > g.away_score
+            ? g.home_team
+            : g.away_team;
       });
 
-      // Cumulative tiebreaker accuracy across every graded week
-      const playerTiebreakers = tiebreakers.filter(
-        (t) => t.player_id === player.id && weekFinalTotals[t.week]
-      );
-      const tiebreakerDiff = playerTiebreakers.reduce(
-        (sum, t) => sum + Math.abs(t.guessed_total - weekFinalTotals[t.week].actual_total),
-        0
-      );
-      const hasTiebreakerData = playerTiebreakers.length > 0;
+      // Actual combined score of the LAST (by kickoff) final game in each
+      // week -- that's the game each week's tiebreaker guess is based on
+      const weekFinalTotals = {};
+      finalGames.forEach((g) => {
+        const existing = weekFinalTotals[g.week];
+        if (!existing || new Date(g.kickoff_time) > new Date(existing.kickoff_time)) {
+          weekFinalTotals[g.week] = {
+            kickoff_time: g.kickoff_time,
+            actual_total: g.home_score + g.away_score,
+          };
+        }
+      });
 
-      return { id: player.id, name: player.name, weekWins, total, tiebreakerDiff, hasTiebreakerData };
-    });
+      const results = players.map((player) => {
+        const weekWins = {};
+        let total = 0;
 
-    results.sort((a, b) => {
-      if (b.total !== a.total) return b.total - a.total;
-      // Tied on total wins -- closer cumulative tiebreaker guess wins.
-      // Players with no tiebreaker data fall to the bottom of a tie.
-      if (a.hasTiebreakerData !== b.hasTiebreakerData) {
-        return a.hasTiebreakerData ? -1 : 1;
-      }
-      return a.tiebreakerDiff - b.tiebreakerDiff;
-    });
+        distinctWeeks.forEach((w) => {
+          const weekGameIds = finalGames.filter((g) => g.week === w).map((g) => g.id);
+          const wins = picks.filter(
+            (pk) =>
+              pk.player_id === player.id &&
+              weekGameIds.includes(pk.game_id) &&
+              winners[pk.game_id] &&
+              pk.picked_team === winners[pk.game_id]
+          ).length;
+          weekWins[w] = wins;
+          total += wins;
+        });
 
-    setRows(results);
-    setLoading(false);
+        // Cumulative tiebreaker accuracy across every graded week
+        const playerTiebreakers = tiebreakers.filter(
+          (t) => t.player_id === player.id && weekFinalTotals[t.week]
+        );
+        const tiebreakerDiff = playerTiebreakers.reduce(
+          (sum, t) => sum + Math.abs(t.guessed_total - weekFinalTotals[t.week].actual_total),
+          0
+        );
+        const hasTiebreakerData = playerTiebreakers.length > 0;
+
+        return { id: player.id, name: player.name, weekWins, total, tiebreakerDiff, hasTiebreakerData };
+      });
+
+      results.sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        // Tied on total wins -- closer cumulative tiebreaker guess wins.
+        // Players with no tiebreaker data fall to the bottom of a tie.
+        if (a.hasTiebreakerData !== b.hasTiebreakerData) {
+          return a.hasTiebreakerData ? -1 : 1;
+        }
+        return a.tiebreakerDiff - b.tiebreakerDiff;
+      });
+
+      setRows(results);
+    } catch (err) {
+      setError(err.message || "Something went wrong loading standings.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (checking) {
