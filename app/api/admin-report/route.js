@@ -124,15 +124,48 @@ export async function GET(request) {
         const winner = winners[g.id];
         if (pick && winner && pick.picked_team === winner) wins += 1;
       });
-      return { name: player.name, wins };
+      return { id: player.id, name: player.name, wins };
     });
 
     const topWeekScore = Math.max(0, ...weekPlayerWins.map((p) => p.wins));
-    const weekWinners =
-      topWeekScore > 0
-        ? weekPlayerWins.filter((p) => p.wins === topWeekScore).map((p) => p.name)
-        : [];
     const weekFullyDecided = weekGames.length > 0 && weekGames.every((g) => g.is_final);
+
+    // Weekly winner = most wins. If more than one player is tied on wins,
+    // whoever's tiebreaker guess is closest to the actual combined score of
+    // the week's last game (by kickoff) wins outright; equally close = tie.
+    const tiedAtTop =
+      topWeekScore > 0 ? weekPlayerWins.filter((p) => p.wins === topWeekScore) : [];
+    let weekWinners = tiedAtTop.map((p) => p.name);
+    let decidedByTiebreaker = false;
+    let actualTotal = null;
+
+    if (tiedAtTop.length > 1 && weekFullyDecided) {
+      const lastGame = weekGames[weekGames.length - 1];
+      if (
+        lastGame &&
+        lastGame.home_score !== null &&
+        lastGame.away_score !== null
+      ) {
+        actualTotal = lastGame.home_score + lastGame.away_score;
+
+        const weekTiebreakers = await fetchAllRows(
+          "tiebreakers",
+          "player_id, guessed_total",
+          (query) => query.eq("week", reportWeek)
+        );
+
+        const withDiff = tiedAtTop.map((p) => {
+          const tb = weekTiebreakers.find((t) => t.player_id === p.id);
+          return {
+            ...p,
+            diff: tb ? Math.abs(tb.guessed_total - actualTotal) : Infinity,
+          };
+        });
+        const minDiff = Math.min(...withDiff.map((p) => p.diff));
+        weekWinners = withDiff.filter((p) => p.diff === minDiff).map((p) => p.name);
+        decidedByTiebreaker = weekWinners.length < tiedAtTop.length;
+      }
+    }
 
     const weekHeader = [
       "Player",
@@ -170,7 +203,13 @@ export async function GET(request) {
         winnerBanner = `
           <div style="background:#14301f;border:1px solid #22c55e;border-radius:8px;padding:16px;margin-bottom:20px;">
             <h2 style="margin:0;color:#22c55e;">🏆 This week's winner${weekWinners.length > 1 ? "s were" : " was"} ${weekWinners.join(", ")}, Congrats!</h2>
-            <p style="margin:4px 0 0 0;color:#555;">${topWeekScore} correct picks in Week ${reportWeek}</p>
+            <p style="margin:4px 0 0 0;color:#555;">${topWeekScore} correct picks in Week ${reportWeek}${
+              decidedByTiebreaker
+                ? ` &middot; won on the tiebreaker (actual combined score: ${actualTotal})`
+                : tiedAtTop.length > 1 && weekWinners.length > 1
+                ? " &middot; tied on the tiebreaker too"
+                : ""
+            }</p>
           </div>
         `;
       } else {
